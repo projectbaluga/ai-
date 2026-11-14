@@ -337,7 +337,17 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   // was discussing a concrete write action; a bare "yes" must not create a record.
   const lastAssistant = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
   const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)\b[.!\s]*$/i.test(lastUser);
-  return affirmative && /\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\b/i.test(lastAssistant);
+  if (affirmative && /\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\b/i.test(lastAssistant)) return true;
+
+  // A concise answer like "daily 3%" is a continuation when the assistant
+  // just asked for missing loan terms after the owner described a borrowing event.
+  const recent = messages.slice(-8);
+  const priorLoanRequest = recent.some(message => message.role === "user" &&
+    /\b(?:nangutang|umutang|nagpautang|pinahiram|borrowed|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i.test(message.content));
+  const assistantAskedForTerms = /\b(?:interest|loan terms|interest type|interest value|interest period|daily|weekly|monthly)\b/i.test(lastAssistant) &&
+    /[?؟]/.test(lastAssistant);
+  const suppliesInterestTerm = /\b(?:daily|weekly|monthly|one[- ]?time|fixed|percentage|araw|linggo|buwan|kada\s+(?:araw|linggo|buwan))\b|\d+(?:\.\d+)?\s*%/i.test(lastUser);
+  return priorLoanRequest && assistantAskedForTerms && suppliesInterestTerm;
 }
 
 function isRecordLookupRequest(message: string): boolean {
