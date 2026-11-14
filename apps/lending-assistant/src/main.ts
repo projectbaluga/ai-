@@ -21,7 +21,9 @@ const state = {
   connected: false,
   loading: true,
   messages: [] as Array<{ role: "user" | "assistant"; content: string }>,
+  pendingReviews: [] as Array<{ actionId: string; notice: HTMLElement; confirm: HTMLButtonElement; cancel: HTMLButtonElement }>,
   busy: false,
+  actionBusy: false,
   listening: false,
   voiceMode: false,
   voiceAvailable: false,
@@ -478,6 +480,8 @@ function renderProposal(proposal: AssistantProposal) {
       confirm.className = "proposal-confirm";
       confirm.textContent = "Confirm and save";
       confirm.addEventListener("click", async () => {
+        if (state.actionBusy || state.busy) return;
+        state.actionBusy = true;
         confirm.disabled = true;
         confirm.textContent = "Saving…";
         try {
@@ -489,17 +493,20 @@ function renderProposal(proposal: AssistantProposal) {
           notice.textContent = "Confirmed and saved successfully. Refreshing lending records…";
           confirm.remove();
           await loadData();
+          state.pendingReviews = state.pendingReviews.filter(item => item.actionId !== data.actionId);
           addMessage("assistant", "Confirmed po. Na-save ang transaction at na-refresh ang lending records.");
         } catch (error) {
           notice.textContent = error instanceof Error ? error.message : "Save failed. Please check the records.";
           confirm.disabled = false;
           confirm.textContent = "Try confirmation again";
-        }
+        } finally { state.actionBusy = false; }
       });
       const cancel = document.createElement("button");
       cancel.className = "proposal-cancel";
       cancel.textContent = "Cancel review";
       cancel.addEventListener("click", async () => {
+        if (state.actionBusy || state.busy) return;
+        state.actionBusy = true;
         cancel.disabled = true;
         confirm.disabled = true;
         cancel.textContent = "Cancelling…";
@@ -512,17 +519,19 @@ function renderProposal(proposal: AssistantProposal) {
           notice.textContent = "Cancelled. Nothing was saved.";
           confirm.remove();
           cancel.remove();
+          state.pendingReviews = state.pendingReviews.filter(item => item.actionId !== data.actionId);
         } catch (error) {
           notice.textContent = error instanceof Error ? error.message : "Cancellation failed. Check the action status before retrying.";
           cancel.disabled = false;
           confirm.disabled = false;
           cancel.textContent = "Cancel review";
-        }
+        } finally { state.actionBusy = false; }
       });
       prepare.remove();
       card.appendChild(notice);
       card.appendChild(confirm);
       card.appendChild(cancel);
+      state.pendingReviews.push({ actionId: data.actionId, notice, confirm, cancel });
     } catch (error) {
       prepare.disabled = false;
       prepare.textContent = error instanceof Error ? error.message : "Try again";
@@ -536,11 +545,42 @@ function renderProposal(proposal: AssistantProposal) {
   list.scrollTop = list.scrollHeight;
 }
 
+async function invalidatePendingReviews() {
+  for (const review of [...state.pendingReviews]) {
+    review.confirm.disabled = true;
+    review.cancel.disabled = true;
+    const response = await fetch("/api/actions/" + encodeURIComponent(review.actionId) + "/cancel", {
+      method: "POST", credentials: "same-origin"
+    });
+    const data = await response.json() as { error?: string; status?: string };
+    if (!response.ok || data.status !== "cancelled") {
+      review.confirm.disabled = false;
+      review.cancel.disabled = false;
+      throw new Error(data.error ?? "A pending review could not be safely invalidated.");
+    }
+    review.notice.textContent = "Review cancelled because a new message started. Nothing was saved.";
+    review.confirm.remove();
+    review.cancel.remove();
+    state.pendingReviews = state.pendingReviews.filter(item => item.actionId !== review.actionId);
+  }
+}
+
 async function sendMessage(event: SubmitEvent) {
   event.preventDefault();
   const input = document.querySelector<HTMLTextAreaElement>("#chat-input");
   const content = input?.value.trim();
-  if (!content || state.busy) return;
+  if (!content || state.busy || state.actionBusy) return;
+  if (state.pendingReviews.length) {
+    state.actionBusy = true;
+    try {
+      await invalidatePendingReviews();
+    } catch (error) {
+      addMessage("assistant", (error instanceof Error ? error.message : "May pending review pa.") + " Hindi muna ipinadala ang bagong message para hindi magamit ang lumang approval. Pakitingnan ang pending review.");
+      state.actionBusy = false;
+      return;
+    }
+    state.actionBusy = false;
+  }
   addMessage("user", content);
   if (input) input.value = "";
   if (!state.connected) {
