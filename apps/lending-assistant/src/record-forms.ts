@@ -78,7 +78,7 @@ async function prepareAndReview(type: string, payload: Record<string, unknown>, 
   }
 }
 
-export function bindRecordForms(root: HTMLElement, refresh: () => Promise<void>): void {
+export function bindRecordForms(root: HTMLElement, refresh: () => Promise<void>, borrowers: BorrowerOption[] = []): void {
   root.querySelector<HTMLFormElement>("#borrower-form")?.addEventListener("submit", event => {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
@@ -111,6 +111,22 @@ export function bindRecordForms(root: HTMLElement, refresh: () => Promise<void>)
     if (target) void prepareAndReview("create_loan", payload, "Create loan", target, refresh);
   });
 
+  root.querySelectorAll<HTMLButtonElement>("[data-edit-borrower]").forEach(button => button.addEventListener("click", () => {
+    const borrower = borrowers.find(item => item.id === button.dataset.editBorrower);
+    if (!borrower) return;
+    const fullName = window.prompt("Borrower full name", borrower.full_name);
+    if (!fullName || !fullName.trim()) return;
+    const phone = window.prompt("Phone number (leave blank if none)", "");
+    const notes = window.prompt("Notes (optional)", "");
+    const target = root.querySelector<HTMLElement>("#record-review");
+    if (target) void prepareAndReview("update_borrower", { borrowerId: borrower.id, fullName: fullName.trim(), phone: phone?.trim() || null, notes: notes?.trim() || null }, "Update borrower", target, refresh);
+  }));
+  root.querySelectorAll<HTMLButtonElement>("[data-archive-borrower]").forEach(button => button.addEventListener("click", () => {
+    const borrower = borrowers.find(item => item.id === button.dataset.archiveBorrower);
+    if (!borrower || !window.confirm("Archive " + borrower.full_name + "? The history will be kept.")) return;
+    const target = root.querySelector<HTMLElement>("#record-review");
+    if (target) void prepareAndReview("archive_borrower", { borrowerId: borrower.id }, "Archive borrower", target, refresh);
+  }));
   root.querySelector<HTMLFormElement>("#payment-form")?.addEventListener("submit", event => {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
