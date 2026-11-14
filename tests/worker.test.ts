@@ -353,4 +353,50 @@ describe("API worker", () => {
     expect(env.AI.run).toHaveBeenCalledOnce();
     expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 1200, temperature: 0.35 }));
   });
+
+  it("carries an explicit confirmation forward when the previous assistant turn named the write action", async () => {
+    const proposal = {
+      intent: "prepare_action",
+      message: "Ihahanda ko ang registration ni Wilson para ma-review mo.",
+      proposedActions: [{
+        type: "create_borrower",
+        payload: { fullName: "Wilson Villanueva", phone: "0976153463" },
+        summary: "I-register si Wilson Villanueva",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    env.AI.run.mockImplementationOnce(async () => ({ response: JSON.stringify(proposal) }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [
+        { role: "user", content: "Wilson Villanueva 0976153463" },
+        { role: "assistant", content: "I can register Wilson Villanueva as a borrower. Would you like me to prepare that?" },
+        { role: "user", content: "Sige." }
+      ] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "prepare_action",
+      proposedActions: [{ type: "create_borrower", payload: { fullName: "Wilson Villanueva", phone: "0976153463" } }]
+    });
+    expect(env.AI.run).toHaveBeenCalledOnce();
+  });
+
+  it("returns a safe clarification instead of an unsupported-format error for malformed write output", async () => {
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "I have registered Juan Dela Cruz." }))
+      .mockImplementationOnce(async () => ({ response: "Sorry, I cannot format that." }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "register Juan Dela Cruz" }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "request_clarification",
+      proposedActions: [],
+      needsClarification: true
+    });
+    expect(env.AI.run).toHaveBeenCalledTimes(2);
+  });
 });
