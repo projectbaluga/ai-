@@ -182,7 +182,10 @@ function renderProposal(proposal: AssistantProposal) {
       prepare.textContent = error instanceof Error ? error.message : "Try again";
     }
   });
-  card.append(heading, summary, details, prepare);
+  card.appendChild(heading);
+  card.appendChild(summary);
+  card.appendChild(details);
+  card.appendChild(prepare);
   list.appendChild(card);
   list.scrollTop = list.scrollHeight;
 }
