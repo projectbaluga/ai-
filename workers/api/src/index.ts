@@ -207,16 +207,49 @@ function extractJsonObject(value: string): unknown | null {
   return null;
 }
 
-function unwrapModelOutput(raw: unknown): unknown {
+function modelContentText(value: unknown): string | null {
+  if (typeof value === "string") return value.trim() ? value.trim() : null;
+  if (!Array.isArray(value)) return null;
+  const parts = value.map(part => {
+    if (typeof part === "string") return part;
+    if (!isRecord(part)) return "";
+    if (typeof part.text === "string") return part.text;
+    if (typeof part.content === "string") return part.content;
+    return "";
+  }).filter(part => part.length > 0);
+  return parts.length > 0 ? parts.join("\\n").trim() || null : null;
+}
+
+function unwrapModelContent(raw: unknown): unknown {
   let candidate = raw;
-  for (let depth = 0; depth < 3 && isRecord(candidate); depth++) {
+  for (let depth = 0; depth < 5 && isRecord(candidate); depth++) {
     if ("response" in candidate) candidate = candidate.response;
     else if ("output_text" in candidate) candidate = candidate.output_text;
     else if ("output" in candidate) candidate = candidate.output;
     else if ("result" in candidate && isRecord(candidate.result)) candidate = candidate.result;
-    else break;
+    else if (Array.isArray(candidate.choices)) {
+      const firstChoice = candidate.choices[0];
+      if (!isRecord(firstChoice)) break;
+      if (isRecord(firstChoice.message) && "content" in firstChoice.message) {
+        candidate = firstChoice.message.content;
+      } else if ("text" in firstChoice) {
+        candidate = firstChoice.text;
+      } else if (isRecord(firstChoice.delta) && "content" in firstChoice.delta) {
+        candidate = firstChoice.delta.content;
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
   }
-  return typeof candidate === "string" ? extractJsonObject(candidate) : candidate;
+  return candidate;
+}
+
+function unwrapModelOutput(raw: unknown): unknown {
+  const candidate = unwrapModelContent(raw);
+  const content = modelContentText(candidate);
+  return content !== null ? extractJsonObject(content) : candidate;
 }
 
 export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
@@ -236,22 +269,19 @@ export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
 
 function modelOutputDiagnostics(raw: unknown): JsonObject {
   const outer = isRecord(raw) ? raw : null;
-  const candidate = outer ? (outer.response ?? outer.output_text ?? outer.output ?? raw) : raw;
-  return { outputType: Array.isArray(raw) ? "array" : typeof raw, outputKeys: outer ? Object.keys(outer).slice(0, 12) : [], candidateType: Array.isArray(candidate) ? "array" : typeof candidate, candidateLength: typeof candidate === "string" ? candidate.length : null };
+  const candidate = unwrapModelContent(raw);
+  const content = modelContentText(candidate);
+  return {
+    outputType: Array.isArray(raw) ? "array" : typeof raw,
+    outputKeys: outer ? Object.keys(outer).slice(0, 12) : [],
+    candidateType: content !== null ? "string" : Array.isArray(candidate) ? "array" : typeof candidate,
+    candidateLength: content !== null ? content.length : null
+  };
 }
 
 function modelTextOutput(raw: unknown): string | null {
-  let candidate = raw;
-  for (let depth = 0; depth < 3 && isRecord(candidate); depth++) {
-    if ("response" in candidate) candidate = candidate.response;
-    else if ("output_text" in candidate) candidate = candidate.output_text;
-    else if ("output" in candidate) candidate = candidate.output;
-    else if ("result" in candidate && isRecord(candidate.result)) candidate = candidate.result;
-    else break;
-  }
-  return typeof candidate === "string" && candidate.trim().length > 0
-    ? candidate.trim().slice(0, 4000)
-    : null;
+  const candidate = modelContentText(unwrapModelContent(raw));
+  return candidate ? candidate.slice(0, 4000) : null;
 }
 
 function isPotentialWriteRequest(message: string): boolean {
