@@ -525,6 +525,59 @@ describe("API worker", () => {
     }
   });
 
+  it("recovers a no-interest loan and relative repayment note from Tagalog conversation history", async () => {
+    const originalDb = env.DB;
+    env.DB = {
+      prepare: (_sql: string) => ({
+        bind: (..._values: unknown[]) => ({
+          all: async () => ({ results: [] }),
+          first: async () => null,
+          run: async () => ({ success: true })
+        }),
+        all: async () => ({ results: [] }),
+        first: async () => null,
+        run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "I will prepare the loan." }))
+      .mockImplementationOnce(async () => ({ response: "Sorry, I could not format this." }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [
+          { role: "user", content: "pinautang ko si Mica nang 100 pesos ngayon araw. Babayaran niya sa susunod na linggo." },
+          { role: "assistant", content: "May interest po ba?" },
+          { role: "user", content: "5% one-time interest" },
+          { role: "assistant", content: "Ire-record ko ang 5% one-time interest." },
+          { role: "user", content: "Walang interest" },
+          { role: "assistant", content: "Sige, walang interest." },
+          { role: "user", content: "save" }
+        ] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "prepare_action",
+        proposedActions: [{
+          type: "create_loan",
+          payload: {
+            borrowerFullName: "Mica",
+            principalMinor: 10000,
+            interestType: "none",
+            interestValue: 0,
+            interestFrequency: "one_time",
+            repaymentTimingNote: "sa susunod na linggo",
+            repaymentFrequency: "one_time"
+          },
+          requiresConfirmation: true
+        }]
+      });
+    } finally {
+      env.DB = originalDb;
+    }
+  });
+
   it("returns a traceable 502 for malformed model output without logging user content", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     env.AI.run
