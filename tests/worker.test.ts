@@ -141,6 +141,10 @@ describe("API worker", () => {
       interestFrequency: "one_time",
       repaymentFrequency: "one_time"
     });
+    expect(extractExplicitRepaymentFrequency([
+      { role: "assistant", content: "Ano po ang repayment schedule?" },
+      { role: "user", content: "weekly" }
+    ])).toBe("weekly");
   });
 
   it("keeps a read-only lending overview from reopening an interest-terms conversation", () => {
