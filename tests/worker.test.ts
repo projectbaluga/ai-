@@ -383,6 +383,33 @@ describe("API worker", () => {
     expect(env.AI.run).toHaveBeenCalledOnce();
   });
 
+
+  it("treats a narrated borrowing event as a possible record request, not an already-saved loan", async () => {
+    const clarification = {
+      intent: "request_clarification",
+      message: "I-register muna natin si Juan Dela Cruz bilang borrower. Wala pang loan na nase-save.",
+      proposedActions: [],
+      needsClarification: true
+    };
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "Juan borrowed money and is registered now." }))
+      .mockImplementationOnce(async () => ({ response: JSON.stringify(clarification) }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{
+        role: "user",
+        content: "Juan Dela Cruz nag borrow nang 1000 pesos at next month nya daw ito babayaran."
+      }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "request_clarification",
+      proposedActions: [],
+      needsClarification: true
+    });
+    expect(env.AI.run).toHaveBeenCalledTimes(2);
+  });
+
   it("returns a safe clarification instead of an unsupported-format error for malformed write output", async () => {
     env.AI.run
       .mockImplementationOnce(async () => ({ response: "I have registered Juan Dela Cruz." }))
