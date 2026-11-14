@@ -1,23 +1,35 @@
 # Lending API contract
 
-This module is an owner-only API foundation. It does not calculate interest, balances, penalties, or due dates. Those rules must be agreed before financial summaries are added.
+The Lending Assistant is a single-owner workspace. This API protects owner records, validates write proposals, and records audit events. Financial calculations are intentionally limited until the owner approves the exact interest and payment-allocation rules.
 
-## Authentication
+## Owner authentication
 
-Send the owner token in the HTTP header:
+The browser must never receive or store the owner secret.
 
-`Authorization: Bearer YOUR_OWNER_API_TOKEN`
+- Store a strong random secret in the Cloudflare Worker secret named `OWNER_API_TOKEN`.
+- `POST /api/auth/login` accepts JSON `{ "password": "..." }` over HTTPS.
+- A successful login returns an HttpOnly, Secure, SameSite=Strict cookie named `lending_session`, signed by the Worker and valid for eight hours.
+- `GET /api/auth/session` checks the session.
+- `POST /api/auth/logout` clears the browser cookie.
+- Authenticated API calls use the cookie automatically when same-origin. Legacy bearer authentication remains available for trusted server-to-server calls only.
+- Mutating requests reject a mismatched Origin header.
 
-Keep the token in a Cloudflare Worker secret named `OWNER_API_TOKEN`. Never commit a real token or place it in browser code.
+Do not use a real passphrase in local commits, fixtures, screenshots, prompts, or frontend environment variables. The secret must be configured later in the Cloudflare Worker settings. Login is not available until that secret exists.
 
 ## Prepare, review, and confirm
 
-All write operations use a two-step flow. Preparing an action does not create a borrower, loan, or payment.
+Every write uses two steps. Preparing an action creates only a pending review record; it does not write the borrower, loan, or payment.
 
-1. Send a `POST /api/actions/prepare` request with an action type and payload.
-2. Show the proposed details to the owner.
-3. Only after the owner explicitly approves, send `POST /api/actions/{actionId}/confirm`.
+1. Send `POST /api/actions/prepare` with an action type and validated payload.
+2. Display the proposed details to the owner.
+3. Only after explicit approval, send `POST /api/actions/{actionId}/confirm`.
 4. A pending action expires after 15 minutes and can be confirmed only once.
+
+Supported action types:
+
+- `create_borrower`
+- `create_loan`
+- `record_payment`
 
 Example borrower preparation:
 
@@ -61,7 +73,7 @@ Example payment preparation:
 }
 ```
 
-Money amounts ending in `Minor` are integer centavos (for PHP, 100 centavos = ₱1). The API stores the supplied interest type, value, and period but deliberately does not calculate interest. Fixed-interest units, percentage basis, compounding, rounding, and payment allocation need explicit owner decisions first.
+Money amounts ending in `Minor` are integer centavos (100 centavos = ₱1). The API stores the supplied interest type, value, and period but deliberately does not calculate interest. Fixed-interest units, percentage basis, compounding, rounding, term dates, and payment allocation need explicit owner decisions first.
 
 ## Read-only collections
 
@@ -69,34 +81,22 @@ Money amounts ending in `Minor` are integer centavos (for PHP, 100 centavos = �
 - `GET /api/loans`
 - `GET /api/payments`
 
-All require owner authentication. The API currently returns raw records; it does not infer outstanding balances from them.
+All require owner authentication. These endpoints return stored records and do not infer outstanding balances.
 
-## Current limitations
+## AI assistant
 
-- Single owner token authentication; no user-management screen yet.
-- No CORS allow-list or frontend-to-API connection yet.
-- The authenticated `POST /api/assistant` endpoint now sends conversation messages to the Cloudflare Workers AI binding and returns a structured assistant response. The model may propose only supported action types; proposals are not saved or executed by this endpoint.
-- The frontend must display any proposal for owner review, then submit it to `POST /api/actions/prepare`. The existing backend validation and explicit confirmation endpoint remain mandatory.
-- AI chat is API-only for now; the frontend chat interface, voice, interest calculations, balance calculations, and reports are not implemented yet.
-- No edit or delete endpoint. Confirmed records are preserved with an audit entry.
+`POST /api/assistant` requires owner authentication and accepts 1–20 conversation messages (each up to 4,000 characters). Optional `language` may be `en`, `tl`, or `tl-en`.
+
+The response contains `intent`, `message`, `proposedActions`, and `needsClarification`. Every proposal must include `requiresConfirmation: true`. The AI endpoint does not write to D1. Model output is untrusted and must pass through the normal prepare/confirm flow. The frontend now presents proposal details and requires a separate owner confirmation before saving.
+
+The Worker uses the Cloudflare Workers AI binding and `@cf/meta/llama-3.1-8b-instruct`. If AI is unavailable or returns invalid output, the endpoint returns an error; regular app controls remain the fallback.
+
+## Current implementation boundaries
+
+- The mobile-first dashboard, borrower/loan/payment read views, AI chat panel, browser voice input/output foundation, owner login screen, and explicit AI proposal review are in the frontend.
+- The API supports owner sessions, read-only collections, AI responses, and confirmed create-borrower/create-loan/record-payment actions.
+- Manual create/edit/archive flows for all record types, loan payment recording from the UI, advanced reports, and full audit-log browsing still need implementation.
+- No interest accrual, total payoff, principal allocation, penalties, or due-date calculations are exposed. Do not treat principal less total payments as a real balance until allocation rules are agreed.
+- Session cookies are Secure and intended for HTTPS. Production deployment must use same-origin frontend/API routing.
+- No Cloudflare resource IDs, secrets, database migrations, or deployment configuration have been applied. Do that only after GitHub implementation and CI are complete.
 - Apply database migrations in order before deploying the Worker.
-
-
-## AI assistant endpoint
-
-`POST /api/assistant` requires the owner token and accepts 1–20 conversation messages (each up to 4,000 characters). Optional `language` may be `en`, `tl`, or `tl-en`.
-
-Example:
-
-```json
-{
-  "language": "tl-en",
-  "messages": [
-    { "role": "user", "content": "Gusto kong mag-record ng payment." }
-  ]
-}
-```
-
-The response is structured as `intent`, `message`, `proposedActions`, and `needsClarification`. Every proposed action must include `requiresConfirmation: true`. The endpoint does not write to D1. A proposed action is untrusted model output and must be shown to the owner, then passed through the normal prepare/confirm flow. The model is instructed not to calculate financial figures or invent missing IDs or interest terms.
-
-The Worker uses the configured Cloudflare Workers AI binding and the `@cf/meta/llama-3.1-8b-instruct` model. If AI is unavailable or returns an invalid response, the endpoint returns an error and regular app controls remain the fallback.
