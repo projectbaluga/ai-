@@ -354,7 +354,8 @@ export default {
     const collections: Record<string, string> = {
       "/api/borrowers": "SELECT id, full_name, phone, notes, created_at, updated_at FROM borrowers WHERE archived_at IS NULL ORDER BY full_name",
       "/api/loans": "SELECT id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, status, notes, created_at FROM loans ORDER BY created_at DESC",
-      "/api/payments": "SELECT id, loan_id, amount_minor, paid_at, notes, created_at FROM payments ORDER BY paid_at DESC"
+      "/api/payments": "SELECT id, loan_id, amount_minor, paid_at, notes, created_at FROM payments ORDER BY paid_at DESC",
+      "/api/activity": "SELECT id, action, entity_type, entity_id, details_json, created_at FROM audit_log ORDER BY created_at DESC LIMIT 100"
     };
     if (request.method === "GET" && collections[url.pathname]) {
       const result = await env.DB.prepare(collections[url.pathname]).all();
