@@ -503,6 +503,20 @@ export function buildFinancialLookupReply(message: string, language: SupportedLa
   };
 }
 
+export function extractExplicitRepaymentFrequency(messages: AssistantMessage[]): "one_time" | "daily" | "weekly" | "biweekly" | "monthly" | null {
+  const userText = messages.filter(message => message.role === "user").map(message => message.content).join("\n");
+  const lastUserTurn = [...messages].reverse().find(message => message.role === "user")?.content ?? "";
+  const lastAssistantTurn = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
+  const assistantAskedRepayment = /repayment|payment schedule|paraan ng bayad|schedule ng bayad|hulog|bayaran/i.test(lastAssistantTurn);
+  return /(?:weekly payments|weekly hulog|kada linggo ang hulog|lingguhan ang bayad)/i.test(userText) ? "weekly" :
+    /(?:daily payments|daily hulog|araw-araw ang hulog|kada araw ang bayad)/i.test(userText) ? "daily" :
+    /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ? "biweekly" :
+    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ? "monthly" :
+    assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment)/i.test(lastUserTurn) ? "one_time" :
+    /(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|buo ang bayad|full payment)/i.test(userText) ? "one_time" :
+    null;
+}
+
 export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: JsonObject): AssistantResponse | null {
   if (recordContext.available !== true || !Array.isArray(recordContext.borrowers)) return null;
   const userText = messages.filter(message => message.role === "user").map(message => message.content).join("\n");
@@ -566,17 +580,7 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
   const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|bukas|tomorrow)/i);
   const explicitDateMatch = userText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   const dueDate = explicitDateMatch && isIsoDate(explicitDateMatch[1]) ? explicitDateMatch[1] : undefined;
-  const lastUserTurn = [...messages].reverse().find(message => message.role === "user")?.content ?? "";
-  const lastAssistantTurn = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
-  const assistantAskedRepayment = /repayment|payment schedule|paraan ng bayad|schedule ng bayad|hulog|bayaran/i.test(lastAssistantTurn);
-  const repaymentFrequency =
-    /(?:weekly payments|weekly hulog|kada linggo ang hulog|lingguhan ang bayad)/i.test(userText) ? "weekly" :
-    /(?:daily payments|daily hulog|araw-araw ang hulog|kada araw ang bayad)/i.test(userText) ? "daily" :
-    /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ? "biweekly" :
-    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ? "monthly" :
-    assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment)/i.test(lastUserTurn) ? "one_time" :
-    /(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|buo ang bayad|full payment)/i.test(userText) ? "one_time" :
-    null;
+  const repaymentFrequency = extractExplicitRepaymentFrequency(messages);
   // Interest cadence and repayment cadence are separate. Never reuse a bare
   // "one-time" interest answer as a repayment schedule.
   if (!repaymentFrequency) {
@@ -729,11 +733,13 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     const verifiedLoanProposal = isPotentialWriteRequest(messages)
       ? buildVerifiedLoanProposal(messages, recordContext)
       : null;
-    const incompleteRepaymentProposal = parsed?.proposedActions.some(action =>
-      action.type === "create_loan" &&
-      !["one_time", "daily", "weekly", "biweekly", "monthly"].includes(String(action.payload.repaymentFrequency))
+    const proposedLoan = parsed?.proposedActions.find(action => action.type === "create_loan");
+    const explicitRepaymentFrequency = extractExplicitRepaymentFrequency(messages);
+    const invalidRepaymentProposal = proposedLoan && (
+      !explicitRepaymentFrequency ||
+      proposedLoan.payload.repaymentFrequency !== explicitRepaymentFrequency
     );
-    if (incompleteRepaymentProposal) {
+    if (invalidRepaymentProposal) {
       if (verifiedLoanProposal) return json(verifiedLoanProposal);
       return json({
         intent: "request_clarification",
