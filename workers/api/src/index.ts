@@ -296,6 +296,11 @@ function modelTextOutput(raw: unknown): string | null {
   return candidate ? candidate.slice(0, 4000) : null;
 }
 
+function looksLikeStructuredModelOutput(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("{") || /^\`\`\`(?:json)?\s*\{/i.test(trimmed);
+}
+
 function isPotentialWriteRequest(message: string): boolean {
   const normalized = message.trim();
   // Questions and how-to requests are conversation, even when they mention
@@ -395,7 +400,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     // structured schema and continue through backend validation/confirmation.
     const lastUserMessage = messages[messages.length - 1].content;
     const firstPlainText = modelTextOutput(modelResult);
-    if (!parsed && firstPlainText && !isPotentialWriteRequest(lastUserMessage)) {
+    if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(lastUserMessage)) {
       return json({
         intent: "answer_question",
         message: firstPlainText,
@@ -412,7 +417,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       diagnosticOutput = await runLendingAssistantModel(env.AI, retryPrompt, messages);
       parsed = parseAssistantOutput(diagnosticOutput);
       const retryPlainText = modelTextOutput(diagnosticOutput);
-      if (!parsed && retryPlainText && !isPotentialWriteRequest(lastUserMessage)) {
+      if (!parsed && retryPlainText && !looksLikeStructuredModelOutput(retryPlainText) && !isPotentialWriteRequest(lastUserMessage)) {
         return json({
           intent: "answer_question",
           message: retryPlainText,
