@@ -394,7 +394,7 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   const recent = messages.slice(-8);
   const priorLoanRequest = recent.some(message => message.role === "user" &&
     /\b(?:nangutang|umutang|nagpautang|pinahiram|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i.test(message.content));
-  const assistantAskedForTerms = /\b(?:interest|loan terms|interest type|interest value|interest period|repayment|payment schedule|paraan ng bayad|hulog|bayaran|daily|weekly|monthly)\b/i.test(lastAssistant) &&
+  const assistantAskedForTerms = /\b(?:interest|loan terms|interest type|interest value|interest period|repayment|payment schedule|paraan ng bayad|schedule ng bayad|hulog|bayaran|daily|weekly|monthly)\b/i.test(lastAssistant) &&
     /[?؟]/.test(lastAssistant);
   const suppliesInterestTerm = /\b(?:daily|weekly|monthly|one[- ]?time|fixed|percentage|araw|linggo|buwan|kada\s+(?:araw|linggo|buwan)|isang\s+(?:bayaran|hulog|beses)|single\s+payment|lump[- ]?sum|full\s+payment)\b|\d+(?:\.\d+)?\s*%/i.test(lastUser);
   return priorLoanRequest && assistantAskedForTerms && suppliesInterestTerm;

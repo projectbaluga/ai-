@@ -104,6 +104,57 @@ describe("API worker", () => {
     }
   });
 
+  it("recovers Nora's no-interest one-time loan when the repayment question is phrased in Tagalog", async () => {
+    const originalDb = env.DB;
+    env.DB = {
+      prepare: (sql: string) => ({
+        bind: (..._values: unknown[]) => ({
+          all: async () => ({ results: [] }),
+          first: async () => null,
+          run: async () => ({ success: true })
+        }),
+        all: async () => ({ results: [] }),
+        first: async () => null,
+        run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "{\\"intent\\": invalid}" }))
+      .mockImplementationOnce(async () => ({ response: "{\\"intent\\": invalid}" }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [
+          { role: "user", content: "pinautang ko si nora nang 400 pesos" },
+          { role: "assistant", content: "May interest ba ang utang ni Nora o wala?" },
+          { role: "user", content: "Walang interest" },
+          { role: "assistant", content: "Sige, i-record natin ang utang ni Nora na ₱400 nang walang interest. Paano ang schedule ng bayad—isang beses lang ba ito babayaran (one-time) o may schedule gaya ng lingguhan o buwanan?" },
+          { role: "user", content: "one-time lang po" }
+        ] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "prepare_action",
+        proposedActions: [{
+          type: "create_loan",
+          payload: {
+            borrowerFullName: "nora",
+            principalMinor: 40000,
+            interestType: "none",
+            interestValue: 0,
+            repaymentFrequency: "one_time"
+          },
+          requiresConfirmation: true
+        }],
+        needsClarification: false
+      });
+      expect(env.AI.run).toHaveBeenCalledTimes(2);
+    } finally {
+      env.DB = originalDb;
+    }
+  });
+
   it("requires an explicit repayment answer and never treats one-time interest as one-time repayment", () => {
     const context = {
       available: true,
