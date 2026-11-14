@@ -76,6 +76,7 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
     const hasBorrowerId = text(payload.borrowerId, 80);
     const hasBorrowerName = text(payload.borrowerFullName, 160);
     if (hasBorrowerId === hasBorrowerName) return null;
+    if (hasBorrowerId && ["PENDING_BORROWER_ID", "pending_borrower_id"].includes(String(payload.borrowerId))) return null;
     if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
     if (!Number.isSafeInteger(payload.principalMinor) || (payload.principalMinor as number) <= 0) return null;
     if (payload.currency !== undefined && payload.currency !== "PHP") return null;
