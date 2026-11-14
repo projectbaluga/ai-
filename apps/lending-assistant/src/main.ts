@@ -164,10 +164,12 @@ function addMessage(role: "user" | "assistant", content: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list) return;
   if (state.messages.length === 1) list.innerHTML = "";
+  if (role === "user") list.querySelectorAll(".quick-replies").forEach(node => node.remove());
   const bubble = document.createElement("div");
   bubble.className = `message-bubble ${role}`;
   bubble.textContent = content;
   list.appendChild(bubble);
+  if (role === "assistant") renderQuickReplies(content, list);
   if (role === "assistant" && state.voiceMode && "speechSynthesis" in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(content);
@@ -177,6 +179,47 @@ function addMessage(role: "user" | "assistant", content: string) {
   list.scrollTop = list.scrollHeight;
 }
 
+
+function renderQuickReplies(message: string, list: HTMLElement) {
+  const text = message.toLocaleLowerCase();
+  const previousUser = [...state.messages].reverse().find(item => item.role === "user")?.content.toLocaleLowerCase() ?? "";
+  const recentLoan = /\\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\\b/.test(previousUser) ||
+    state.messages.slice(-8).some(item => item.role === "user" && /\\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\\b/i.test(item.content));
+  if (!recentLoan) return;
+  let choices: string[] = [];
+  if (/\\b(one[- ]?time|monthly|interest|interes|tubo)\\b/.test(text)) {
+    if (/one[- ]?time.{0,35}monthly|monthly.{0,35}one[- ]?time|paminsan|buwanan/.test(text)) {
+      choices = ["One-time interest", "Monthly interest"];
+    } else if (/\\b(rate|percent|percentage|ilang percent|ilang porsyento)\\b/.test(text)) {
+      choices = ["5%", "10%", "Iba ang rate"];
+    } else {
+      choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
+    }
+  } else if (/\\b(due|repay|repayment|bayad|babayaran|kailan.*bayad)\\b/.test(text)) {
+    choices = ["Next month", "May specific date", "Wala pang napagkasunduan"];
+  } else if (/\\b(borrower|pangalan|sino|which person|kanino)\\b/.test(text)) {
+    choices = state.borrowers.slice(0, 5).map(item => item.full_name);
+  }
+  if (!choices.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "quick-replies";
+  wrap.setAttribute("aria-label", "Quick replies");
+  for (const choice of choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "quick-reply";
+    button.textContent = choice;
+    button.addEventListener("click", () => {
+      const input = document.querySelector<HTMLTextAreaElement>("#chat-input");
+      const form = document.querySelector<HTMLFormElement>("#chat-form");
+      if (!input || !form || state.busy || state.actionBusy) return;
+      input.value = choice;
+      form.requestSubmit();
+    });
+    wrap.appendChild(button);
+  }
+  list.appendChild(wrap);
+}
 
 function renderContextPanel(query: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
