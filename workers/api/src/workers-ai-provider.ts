@@ -20,6 +20,11 @@ export async function runLendingAssistantModel(
       ...messages
     ],
     max_tokens: 1200,
-    temperature: 0.35
+    temperature: 0.35,
+    // Match the fast, direct-response behavior of the ProjectBaluga website assistant.
+    // This is a model hint and may be ignored by providers that do not support it.
+    chat_template_kwargs: {
+      enable_thinking: false
+    }
   });
 }
