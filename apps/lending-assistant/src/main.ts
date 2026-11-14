@@ -1,5 +1,6 @@
 import "./style.css";
 import { borrowerFormMarkup, loanFormMarkup, paymentFormMarkup, bindRecordForms } from "./record-forms";
+import { reportsMarkup, bindReports } from "./reports";
 
 type Borrower = { id: string; full_name: string; phone?: string | null };
 type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string };
@@ -41,6 +42,7 @@ function shell() {
           <button data-page="borrowers" class="nav-item"><span>♙</span> Borrowers</button>
           <button data-page="loans" class="nav-item"><span>▤</span> Loans</button>
           <button data-page="activity" class="nav-item"><span>↻</span> Activity</button>
+          <button data-page="reports" class="nav-item"><span>▥</span> Reports</button>
         </nav>
         <div class="sidebar-bottom"><div class="owner-avatar">O</div><div><strong>Owner workspace</strong><small>Private lending records</small></div></div>
       </aside>
@@ -63,7 +65,7 @@ function renderPage() {
   const target = document.querySelector<HTMLElement>("#page-content");
   const label = document.querySelector<HTMLElement>("#page-label");
   if (!target || !label) return;
-  const titles: Record<string, string> = { home: "Overview", borrowers: "Borrowers", loans: "Loans", activity: "Activity" };
+  const titles: Record<string, string> = { home: "Overview", borrowers: "Borrowers", loans: "Loans", activity: "Activity", reports: "Reports" };
   label.textContent = titles[state.page] ?? "Overview";
   document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === state.page));
 
@@ -86,6 +88,9 @@ function renderPage() {
     target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">PEOPLE YOU LEND TO</p><h1>Borrowers</h1><p class="muted">Manage borrower details and find records with your AI assistant.</p></div></div><section class="list-card">${state.connected && state.borrowers.length ? state.borrowers.map(b => `<div class="record-row"><span class="record-avatar">${escapeHtml(b.full_name.slice(0,1).toUpperCase())}</span><div><strong>${escapeHtml(b.full_name)}</strong><small>${escapeHtml(b.phone ?? "No phone number")}</small></div></div>`).join("") : empty("Borrower records will appear here after secure owner login.")}</section>`;
   } else if (state.page === "loans") {
     target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">LENDING PORTFOLIO</p><h1>Loans</h1><p class="muted">Review principal amounts and loan status.</p></div></div><section class="list-card">${state.connected && state.loans.length ? state.loans.map(l => `<div class="record-row"><span class="record-avatar loan-avatar">₱</span><div><strong>${peso(l.principal_minor)}</strong><small>${escapeHtml(l.currency)} · ${escapeHtml(l.status)}</small></div><span class="status-tag">${escapeHtml(l.status)}</span></div>`).join("") : empty("Loan records will appear here after secure owner login.")}</section>`;
+  } else if (state.page === "reports") {
+    target.innerHTML = reportsMarkup();
+    bindReports(target);
   } else {
     const rows = state.activity.map(a => "<div class=\"record-row\"><span class=\"record-avatar loan-avatar\">↻</span><div><strong>" + escapeHtml(a.action.replaceAll("_", " ")) + " · " + escapeHtml(a.entity_type) + "</strong><small>" + new Date(a.created_at).toLocaleString("en-PH") + " · Ref: " + escapeHtml(a.entity_id.slice(0,8)) + "</small></div></div>").join("");
     target.innerHTML = "<div class=\"page-intro\"><div><p class=\"eyebrow\">AUDIT TRAIL</p><h1>Activity</h1><p class=\"muted\">Confirmed changes recorded by the system.</p></div></div><section class=\"list-card\">" + (state.connected && state.activity.length ? rows : empty("Confirmed activity will appear here after secure owner login.")) + "</section>";
