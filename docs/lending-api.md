@@ -12,7 +12,7 @@ The browser must never receive or store the owner secret.
 - `GET /api/auth/session` checks the session.
 - `POST /api/auth/logout` clears the browser cookie.
 - Authenticated API calls use the cookie automatically when same-origin. Legacy bearer authentication remains available for trusted server-to-server calls only.
-- Mutating requests reject a mismatched Origin header.
+- Cookie-authenticated mutating requests require an exact same-origin `Origin` header; missing or mismatched origins are rejected. Bearer authentication remains for trusted server-to-server calls.
 
 Do not use a real passphrase in local commits, fixtures, screenshots, prompts, or frontend environment variables. The secret must be configured later in the Cloudflare Worker settings. Login is not available until that secret exists.
 
