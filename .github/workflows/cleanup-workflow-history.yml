@@ -1,0 +1,54 @@
+name: Cleanup Workflow History
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 0"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-workflow-history
+  cancel-in-progress: false
+
+jobs:
+  delete-completed-runs:
+    name: Delete all completed workflow runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete completed workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Finding completed workflow runs in ${REPOSITORY}..."
+          mapfile -t run_ids < <(
+            gh api --paginate --jq '.workflow_runs[] | select(.status == "completed") | .id' \
+              "repos/${REPOSITORY}/actions/runs?per_page=100"
+          )
+
+          deleted=0
+          failed=0
+
+          for run_id in "${run_ids[@]}"; do
+            if [[ "${run_id}" == "${CURRENT_RUN_ID}" ]]; then
+              echo "Skipping the cleanup run itself (${run_id})."
+              continue
+            fi
+
+            echo "Deleting workflow run ${run_id}..."
+            if gh api --silent --method DELETE "repos/${REPOSITORY}/actions/runs/${run_id}"; then
+              ((deleted+=1))
+            else
+              echo "::warning::Could not delete workflow run ${run_id}."
+              ((failed+=1))
+            fi
+          done
+
+          echo "Finished. Deleted: ${deleted}; failed: ${failed}."
