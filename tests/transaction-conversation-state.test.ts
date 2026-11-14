@@ -39,6 +39,18 @@ describe("transaction conversation state", () => {
     expect(buildTransactionConversationState(messages).status).toBe("revising_transaction");
   });
 
+  it("preserves a clear yes to the immediately preceding specific action", () => {
+    const messages: AssistantMessage[] = [
+      { role: "user", content: "Jeffrey Peconcillo 09171234567" },
+      { role: "assistant", content: "I can register Jeffrey Peconcillo as a borrower. Would you like me to prepare that?" },
+      { role: "user", content: "Opo." }
+    ];
+    expect(buildTransactionConversationState(messages)).toMatchObject({
+      status: "confirming_action",
+      carriesTransactionContext: true
+    });
+  });
+
   it("starts a separate transaction when a new lending event is narrated", () => {
     const messages: AssistantMessage[] = [
       { role: "user", content: "I lent Jeffrey Peconcillo 1000 pesos." },
