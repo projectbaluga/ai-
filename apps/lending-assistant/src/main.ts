@@ -179,9 +179,25 @@ function addMessage(role: "user" | "assistant", content: string) {
 function renderContextPanel(query: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list || !state.connected) return;
-  const q = query.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const has = (...terms: string[]) => terms.some(term => q.includes(term));
-  const nameMatches = (name: string) => { const normalized = name.toLocaleLowerCase(); const words = normalized.split(/\s+/); return q.includes(normalized) || words.some(word => word.length > 2 && q.split(/\s+/).includes(word)); };
+  const normalize = (value: string) => value.toLocaleLowerCase().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]+/g, " ").trim();
+  const q = normalize(query);
+  const ignored = new Set(["show", "find", "list", "open", "view", "search", "all", "my", "me", "please", "po", "ang", "mga", "ng", "sa", "si", "kay", "for", "the", "a", "an", "with", "about", "record", "records"]);
+  const tokens = q.split(/\s+/).filter(word => word.length > 1 && !ignored.has(word));
+  const has = (...terms: string[]) => terms.some(term => q.includes(normalize(term)));
+  const borrowerCandidates = state.borrowers.map(b => {
+    const nameTokens = normalize(b.full_name).split(/\s+/).filter(Boolean);
+    const matched = nameTokens.filter(word => tokens.includes(word));
+    return { borrower: b, matched: matched.length, complete: nameTokens.length > 0 && nameTokens.every(word => tokens.includes(word)) };
+  }).filter(item => item.matched > 0)
+    .sort((a, b) => Number(b.complete) - Number(a.complete) || b.matched - a.matched);
+  const exactBorrowers = borrowerCandidates.filter(item => item.complete).map(item => item.borrower);
+  const singleNameCandidates = tokens.length === 1 ? borrowerCandidates.map(item => item.borrower) : [];
+  const namedBorrowers = exactBorrowers.length ? exactBorrowers :
+    singleNameCandidates.length === 1 ? singleNameCandidates : [];
+  const ambiguousBorrowers = !exactBorrowers.length && singleNameCandidates.length > 1 ? singleNameCandidates : [];
+  const loanIdMatches = state.loans.filter(loan => q.includes(normalize(loan.id)));
+  const paymentIdMatches = state.payments.filter(payment => q.includes(normalize(payment.id)));
   const card = document.createElement("section");
   card.className = "context-panel";
   const heading = document.createElement("h4");
@@ -206,7 +222,7 @@ function renderContextPanel(query: string) {
     action.addEventListener("click", () => {
       state.page = page;
       renderPage();
-      const target = document.querySelector<HTMLElement>(`[data-record-id="${CSS.escape(id)}"]`);
+      const target = Array.from(document.querySelectorAll<HTMLElement>("[data-record-id]")).find(el => el.dataset.recordId === id);
       if (target instanceof HTMLDetailsElement) target.open = true;
       target?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
@@ -217,40 +233,43 @@ function renderContextPanel(query: string) {
     count++;
   };
   let kind = "";
-  if (has("payment", "bayad", "hulog", "nabayad", "payments")) kind = "payments";
-  else if (has("loan", "loans", "pautang", "utang record", "active loan")) kind = "loans";
-  else if (has("borrower", "borrowers", "customer", "kliyente", "tao", "sino")) kind = "borrowers";
+  if (paymentIdMatches.length || has("payment", "bayad", "hulog", "nabayad", "payments")) kind = "payments";
+  else if (loanIdMatches.length || has("loan", "loans", "pautang", "utang record", "active loan")) kind = "loans";
+  else if (has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") || namedBorrowers.length || ambiguousBorrowers.length) kind = "borrowers";
   else if (has("activity", "history", "kasaysayan", "recent")) kind = "activity";
   else if (has("overview", "dashboard", "summary", "kabuuan", "workspace")) kind = "overview";
-  else {
-    const named = state.borrowers.filter(b => nameMatches(b.full_name));
-    if (named.length) kind = "borrowers";
-  }
   if (kind === "borrowers") {
-    heading.textContent = "Borrower records";
-    const namedMatches = state.borrowers.filter(b => nameMatches(b.full_name));
-    const generic = has("lahat", "all", "list", "show", "find") && !namedMatches.length;
-    const matches = namedMatches.length ? namedMatches : generic || has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") ? state.borrowers : [];
+    heading.textContent = ambiguousBorrowers.length ? "Possible borrower matches" : "Borrower records";
+    const generic = has("lahat", "all", "list", "show", "find") && !namedBorrowers.length && !ambiguousBorrowers.length;
+    const matches = namedBorrowers.length ? namedBorrowers :
+      ambiguousBorrowers.length ? ambiguousBorrowers :
+      generic || has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") ? state.borrowers : [];
     matches.slice(0, 12).forEach(b => {
       const related = state.loans.filter(l => l.borrower_id === b.id);
       addRow(b.full_name, (b.phone || "No phone recorded") + " · " + related.length + " linked loan(s)", "borrowers", b.id, "borrower");
     });
+    if (ambiguousBorrowers.length) {
+      const hint = document.createElement("p");
+      hint.className = "context-note";
+      hint.textContent = "More than one borrower matches that name. Please specify the full name before preparing a change.";
+      card.appendChild(hint);
+    }
   } else if (kind === "loans") {
     heading.textContent = "Loan records";
-    const namedBorrowers = state.borrowers.filter(b => nameMatches(b.full_name));
-    const generic = !namedBorrowers.length && (has("lahat", "all", "list", "show", "active") || has("loan", "loans", "pautang", "utang record"));
-    const matches = state.loans.filter(l => (generic || namedBorrowers.some(b => b.id === l.borrower_id)) && (!has("active", "aktibo") || l.status === "active"));
+    const generic = !namedBorrowers.length && !loanIdMatches.length &&
+      (has("lahat", "all", "list", "show", "active") || has("loan", "loans", "pautang", "utang record"));
+    const matches = loanIdMatches.length ? loanIdMatches : state.loans.filter(l =>
+      (generic || namedBorrowers.some(b => b.id === l.borrower_id)) &&
+      (!has("active", "aktibo") || l.status === "active"));
     matches.slice(0, 12).forEach(l => {
       const borrower = state.borrowers.find(b => b.id === l.borrower_id);
       addRow(peso(l.principal_minor) + " · " + l.status, (borrower?.full_name ?? "Borrower unavailable") + " · " + l.interest_type + " interest", "loans", l.id, "loan");
     });
   } else if (kind === "payments") {
     heading.textContent = "Recorded payment entries";
-    const namedBorrowers = state.borrowers.filter(b => nameMatches(b.full_name));
-    const matches = state.payments.filter(p => {
+    const matches = paymentIdMatches.length ? paymentIdMatches : state.payments.filter(p => {
       const loan = state.loans.find(l => l.id === p.loan_id);
-      const borrower = loan && state.borrowers.find(b => b.id === loan.borrower_id);
-      return !namedBorrowers.length || !!borrower && namedBorrowers.some(b => b.id === borrower.id);
+      return !namedBorrowers.length || !!loan && namedBorrowers.some(b => b.id === loan.borrower_id);
     });
     matches.slice(0, 12).forEach(p => {
       const loan = state.loans.find(l => l.id === p.loan_id);
@@ -294,7 +313,6 @@ function renderContextPanel(query: string) {
   list.appendChild(card);
   list.scrollTop = list.scrollHeight;
 }
-
 function renderProposal(proposal: AssistantProposal) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list) return;
