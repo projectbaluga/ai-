@@ -101,6 +101,10 @@ The Worker uses the Cloudflare Workers AI binding and `@cf/meta/llama-3.1-8b-ins
 
 The Pages project uses a Pages Function at `/api/*` to forward same-origin requests through the `API` service binding to the `ai-workspace-api` Worker. This keeps the browser on one origin so the HttpOnly session cookie can be used without exposing the owner secret to frontend JavaScript. The Pages Wrangler configuration declares the service binding; the Worker must exist before the Pages Function can be deployed. No Cloudflare service has been created or connected yet.
 
+## Database integration tests
+
+The test suite uses Cloudflare's Workers Vitest integration and an isolated local D1 database. It applies every SQL migration in `database/migrations` before the D1 integration tests. The integration coverage exercises confirmed borrower creation, duplicate concurrent confirmation, rollback when the audit insert fails, payment recording, and the latest loan-terms migration. These tests run locally in Miniflare through GitHub Actions; they do not connect to or modify a production Cloudflare D1 database.
+
 ## Current implementation boundaries
 
 - The mobile-first dashboard, expandable borrower and loan detail views (including linked loan and recorded-payment history), borrower/loan/payment create forms, AI chat panel, browser voice input/output foundation, owner login screen, and explicit AI proposal review are in the frontend.
@@ -108,5 +112,5 @@ The Pages project uses a Pages Function at `/api/*` to forward same-origin reque
 - Borrower update/archive workflows are available; loan closure workflows, configurable repayment schedules, and borrower/loan detail pages still need implementation. Active loan interest terms can be edited through owner confirmation. On-demand recorded-payment reports are available. The Activity screen reads confirmed audit entries.
 - No interest accrual, total payoff, principal allocation, penalties, or due-date calculations are exposed. Do not treat principal less total payments as a real balance until allocation rules are agreed.
 - Session cookies are Secure and intended for HTTPS. Production deployment must use same-origin frontend/API routing.
-- No Cloudflare resource IDs, secrets, database migrations, or deployment configuration have been applied. Do that only after GitHub implementation and CI are complete.
+- The local D1 test database applies all migrations during CI. No production Cloudflare resource IDs, secrets, database migrations, or deployment configuration have been applied. Do that only after GitHub implementation and CI are complete.
 - Apply database migrations in order before deploying the Worker, including `0003_borrower_maintenance_actions.sql` and `0004_loan_terms_action.sql`.
