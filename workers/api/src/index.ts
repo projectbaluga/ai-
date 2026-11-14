@@ -33,6 +33,12 @@ const isRecord = (value: unknown): value is JsonObject =>
 const text = (value: unknown, max = 200): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= max;
 
+const isIsoDate = (value: unknown): value is string => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(value + "T00:00:00Z");
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+
 function normalizeActionPayload(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
   if (!isRecord(input)) return null;
   const aliases: Record<string, ActionType> = {
@@ -53,6 +59,17 @@ function normalizeActionPayload(type: unknown, input: unknown): { type: ActionTy
     if (payload.phone === undefined && typeof payload.contactNumber === "string") payload.phone = payload.contactNumber;
     delete payload.name;
     delete payload.contactNumber;
+  }
+  if (canonicalType === "create_loan" || canonicalType === "update_loan_terms") {
+    if (payload.interestFrequency === undefined && typeof payload.interestPeriod === "string") {
+      payload.interestFrequency = payload.interestPeriod;
+    }
+    if (payload.interestPeriod === undefined && typeof payload.interestFrequency === "string") {
+      payload.interestPeriod = payload.interestFrequency === "monthly" ? "monthly" : "one_time";
+    }
+    if (canonicalType === "create_loan" && payload.repaymentFrequency === undefined) {
+      payload.repaymentFrequency = "one_time";
+    }
   }
   return { type: canonicalType, payload };
 }
@@ -83,7 +100,16 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
     if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
     if (typeof payload.interestValue !== "number" || !Number.isFinite(payload.interestValue) || payload.interestValue < 0) return null;
     if (!["one_time", "monthly"].includes(String(payload.interestPeriod))) return null;
+    if (!["one_time", "daily", "weekly", "monthly", "annual"].includes(String(payload.interestFrequency))) return null;
     if (payload.interestType === "none" && payload.interestValue !== 0) return null;
+    if (payload.dueDate !== undefined && payload.dueDate !== null &&
+        !isIsoDate(payload.dueDate)) return null;
+    if (payload.repaymentFrequency !== undefined && !["one_time", "daily", "weekly", "biweekly", "monthly"].includes(String(payload.repaymentFrequency))) return null;
+    if (payload.repaymentTimingNote !== undefined && payload.repaymentTimingNote !== null && !text(payload.repaymentTimingNote, 240)) return null;
+    if (payload.installmentCount !== undefined && payload.installmentCount !== null &&
+        (!Number.isSafeInteger(payload.installmentCount) || (payload.installmentCount as number) <= 0)) return null;
+    if (payload.installmentAmountMinor !== undefined && payload.installmentAmountMinor !== null &&
+        (!Number.isSafeInteger(payload.installmentAmountMinor) || (payload.installmentAmountMinor as number) <= 0)) return null;
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
     return { type, payload };
   }
@@ -102,6 +128,7 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
     if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
     if (typeof payload.interestValue !== "number" || !Number.isFinite(payload.interestValue) || payload.interestValue < 0) return null;
     if (!["one_time", "monthly"].includes(String(payload.interestPeriod))) return null;
+    if (!["one_time", "daily", "weekly", "monthly", "annual"].includes(String(payload.interestFrequency))) return null;
     if (payload.interestType === "none" && payload.interestValue !== 0) return null;
     return { type, payload };
   }
@@ -362,7 +389,7 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   // Carry an explicit owner approval forward only when the preceding assistant turn
   // was discussing a concrete write action; a bare "yes" must not create a record.
   const lastAssistant = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
-  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)\b[.!\s]*$/i.test(lastUser);
+  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save|i-save|isave|save it|register na)\b[.!\s]*$/i.test(lastUser);
   if (affirmative && /\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\b/i.test(lastAssistant)) return true;
 
   // A concise answer like "daily 3%" is a continuation when the assistant
@@ -403,7 +430,7 @@ async function findTargetedRecords(db: D1Database, messages: AssistantMessage[])
   const values = terms;
   const [borrowers, loans, payments] = await Promise.all([
     db.prepare(`SELECT id, full_name, phone FROM borrowers WHERE archived_at IS NULL AND (${predicates.replaceAll("search_value", "full_name")}) ORDER BY full_name LIMIT 10`).bind(...values).all(),
-    db.prepare(`SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY l.created_at DESC LIMIT 10`).bind(...values, ...values).all(),
+    db.prepare(`SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.interest_frequency, l.due_date, l.repayment_timing_note, l.repayment_frequency, l.installment_count, l.installment_amount_minor, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY l.created_at DESC LIMIT 10`).bind(...values, ...values).all(),
     db.prepare(`SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(p.id), lower(?)) > 0 OR instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY p.paid_at DESC LIMIT 10`).bind(...values, ...terms.flatMap(term => [term, term])).all()
   ]);
   return {
@@ -432,7 +459,7 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
     return name.length > 0 && (" " + normalizedText + " ").includes(" " + name + " ");
   });
   if (matches.length > 1) return null;
-  const nameMatch = userText.match(/\bkay[ \t]+([\p{L}][\p{L}'’-]*(?:[ \t]+[\p{L}][\p{L}'’-]*){1,3})/iu);
+  const nameMatch = userText.match(/\b(?:kay|si|ni)[ \t]+([\p{L}][\p{L}'’-]*(?:[ \t]+(?!ng\b|nang\b|na\b|ngayon\b|today\b|kahapon\b|yesterday\b|bukas\b|tomorrow\b)[\p{L}][\p{L}'’-]*){0,2})/iu);
   const borrowerName = matches.length === 1 ? matches[0].full_name : nameMatch?.[1]
     ?.replace(/\s+(?:ngayon|today|kahapon|yesterday|bukas|tomorrow)$/i, "").trim();
   if (!borrowerName) return null;
@@ -443,22 +470,52 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
   const principalMinor = Math.round(principal * 100);
   if (!Number.isFinite(principal) || principal <= 0 || !Number.isSafeInteger(principalMinor)) return null;
 
-  const interestMatch = userText.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (!interestMatch) return null;
-  const interestValue = Number(interestMatch[1]);
-  if (!Number.isFinite(interestValue) || interestValue < 0) return null;
-
-  const oneTime = /\b(?:one[- ]?time|one[- ]off|isang beses|isang hulog)\b/i.test(userText);
-  const monthly = /\b(?:monthly|buwan(?:an)?|kada buwan)\b/i.test(userText);
-  if (oneTime === monthly) return null;
-
+  const noInterestMatch = [...userText.matchAll(/\b(?:walang\s+(?:interest|tubo)|interest[- ]?free|no\s+interest)\b/gi)].at(-1);
+  const interestTermText = messages.map((message, index) => ({ message, index }))
+    .filter(({ message, index }) => message.role === "user" && (
+      /%|interest|tubo/i.test(message.content) ||
+      /interest|interest type|interest period|interest frequency/i.test(
+        [...messages.slice(0, index)].reverse().find(previous => previous.role === "assistant")?.content ?? ""
+      )
+    ))
+    .map(({ message }) => message.content).join(" ");
+  const percentMatches = [...userText.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
+  const lastPercent = percentMatches.at(-1);
+  const noInterest = Boolean(noInterestMatch && (!lastPercent || noInterestMatch.index! > lastPercent.index!));
+  let interestType: "none" | "percentage" = "none";
+  let interestValue = 0;
+  let interestFrequency = "one_time";
+  if (!noInterest) {
+    if (!lastPercent) return null;
+    interestType = "percentage";
+    interestValue = Number(lastPercent[1]);
+    if (!Number.isFinite(interestValue) || interestValue < 0) return null;
+    const frequencyMatches = [
+      { value: "one_time", regex: /\b(?:one[- ]?time|one[- ]?off|isang beses|isang hulog)\b/gi },
+      { value: "daily", regex: /\b(?:daily|araw[- ]araw|kada araw)\b/gi },
+      { value: "weekly", regex: /\b(?:weekly|lingguhan|kada linggo)\b/gi },
+      { value: "monthly", regex: /\b(?:monthly|buwan(?:an)?|kada buwan)\b/gi },
+      { value: "annual", regex: /\b(?:annually|annual|yearly|taunan|kada taon)\b/gi }
+    ];
+    const found = frequencyMatches.map(item => ({ value: item.value, index: [...interestTermText.matchAll(item.regex)].at(-1)?.index ?? -1 }))
+      .filter(item => item.index >= 0).sort((a, b) => b.index - a.index);
+    if (!found.length) return null;
+    interestFrequency = found[0].value;
+  }
+  const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|bukas|tomorrow)/i);
+  const explicitDateMatch = userText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  const dueDate = explicitDateMatch && isIsoDate(explicitDateMatch[1]) ? explicitDateMatch[1] : undefined;
+  const repaymentFrequency = /(?:weekly payments|weekly hulog|kada linggo ang hulog)/i.test(userText) ? "weekly" :
+    /(?:daily payments|daily hulog|araw-araw ang hulog)/i.test(userText) ? "daily" :
+    /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ? "biweekly" :
+    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog)/i.test(userText) ? "monthly" : "one_time";
   const borrower = matches[0] ?? null;
-  const repaymentTimingMentioned = /\b(?:next month|sa susunod na buwan|next week|bukas|tomorrow|within a week)\b/i.test(userText);
-  const message = "Nakuha ko na po ang detalye. Ihahanda ko ang loan para kay " + borrowerName +
+  const interestDescription = interestType === "none" ? "walang interest" : interestValue + "% " + interestFrequency + " interest";
+  const message = "Nakuha ko po. Ihahanda ko ang loan para kay " + borrowerName +
     ": ₱" + principal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
-    " principal, " + interestValue + "% " + (oneTime ? "one-time interest" : "monthly interest") +
-    (repaymentTimingMentioned ? ". Paalala: hindi pa nase-save ng app ang 'next month' bilang due date." : "") +
-    " Pakireview ang proposal bago i-save.";
+    " principal at " + interestDescription +
+    (dueDate ? ", due date " + dueDate : repaymentTimingMatch ? ", napag-usapang bayaran: " + repaymentTimingMatch[0] : "") +
+    ". Pakireview ang detalye bago i-save.";
   return {
     intent: "prepare_action",
     message,
@@ -468,13 +525,16 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
         ...(borrower ? { borrowerId: borrower.id } : { borrowerFullName: borrowerName }),
         principalMinor,
         currency: "PHP",
-        interestType: "percentage",
+        interestType,
         interestValue,
-        interestPeriod: oneTime ? "one_time" : "monthly"
+        interestPeriod: interestFrequency === "monthly" ? "monthly" : "one_time",
+        interestFrequency,
+        ...(dueDate ? { dueDate } : {}),
+        ...(repaymentTimingMatch ? { repaymentTimingNote: repaymentTimingMatch[0] } : {}),
+        repaymentFrequency
       },
       summary: (borrower ? "Gumawa ng loan record para kay " : "Irehistro si ") + borrowerName + (borrower ? " na may principal na ₱" : " bilang borrower at gumawa ng loan na ₱") +
-        principal.toLocaleString("en-PH", { maximumFractionDigits: 2 }) + " at " + interestValue + "% " +
-        (oneTime ? "one-time interest" : "monthly interest"),
+        principal.toLocaleString("en-PH", { maximumFractionDigits: 2 }) + " at " + interestDescription,
       requiresConfirmation: true
     }],
     needsClarification: false
@@ -530,7 +590,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     try {
       const [borrowerRows, loanRows, paymentRows] = await Promise.all([
         env.DB.prepare("SELECT id, full_name, phone FROM borrowers WHERE archived_at IS NULL ORDER BY full_name LIMIT 30").all<{ id: string; full_name: string }>(),
-        env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.interest_frequency, l.due_date, l.repayment_timing_note, l.repayment_frequency, l.installment_count, l.installment_amount_minor, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
         env.DB.prepare("SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id ORDER BY p.paid_at DESC LIMIT 30").all<Record<string, unknown>>()
       ]);
       recordContext = { available: true, borrowers: borrowerRows.results ?? [], loans: loanRows.results ?? [], recentPayments: paymentRows.results ?? [] };
@@ -735,8 +795,8 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
         await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ?").bind(actionId).run();
         return json({ error: "Active loan not found. No terms were changed." }, 404);
       }
-      statement = env.DB.prepare("UPDATE loans SET interest_type = ?, interest_value = ?, interest_period = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(payload.interestType, payload.interestValue, payload.interestPeriod, entityId);
+      statement = env.DB.prepare("UPDATE loans SET interest_type = ?, interest_value = ?, interest_period = ?, interest_frequency = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(payload.interestType, payload.interestValue, payload.interestPeriod, payload.interestFrequency, entityId);
     } else if (claim.action_type === "create_loan") {
       entityType = "loan";
       let borrowerId = text(payload.borrowerId, 80) ? payload.borrowerId : null;
@@ -767,8 +827,8 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
       }
       if (!borrowerId) throw new Error("Loan borrower is missing.");
       statement = env.DB.prepare(
-        "INSERT INTO loans (id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(entityId, borrowerId, payload.principalMinor, payload.currency ?? "PHP", payload.interestType, payload.interestValue, payload.interestPeriod, payload.notes ?? null);
+        "INSERT INTO loans (id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, notes, due_date, repayment_timing_note, repayment_frequency, installment_count, installment_amount_minor, interest_frequency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(entityId, borrowerId, payload.principalMinor, payload.currency ?? "PHP", payload.interestType, payload.interestValue, payload.interestPeriod, payload.notes ?? null, payload.dueDate ?? null, payload.repaymentTimingNote ?? null, payload.repaymentFrequency ?? "one_time", payload.installmentCount ?? null, payload.installmentAmountMinor ?? null, payload.interestFrequency ?? payload.interestPeriod);
     } else {
       entityType = "payment";
       const loan = await env.DB.prepare("SELECT id FROM loans WHERE id = ? AND status = 'active'")
@@ -929,7 +989,7 @@ export default {
     }
     const collections: Record<string, string> = {
       "/api/borrowers": "SELECT id, full_name, phone, notes, created_at, updated_at FROM borrowers WHERE archived_at IS NULL ORDER BY full_name",
-      "/api/loans": "SELECT id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, status, notes, created_at FROM loans ORDER BY created_at DESC",
+      "/api/loans": "SELECT id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, interest_frequency, due_date, repayment_timing_note, repayment_frequency, installment_count, installment_amount_minor, status, notes, created_at FROM loans ORDER BY created_at DESC",
       "/api/payments": "SELECT id, loan_id, amount_minor, paid_at, notes, created_at FROM payments ORDER BY paid_at DESC",
       "/api/activity": "SELECT id, action, entity_type, entity_id, details_json, created_at FROM audit_log ORDER BY created_at DESC LIMIT 100"
     };

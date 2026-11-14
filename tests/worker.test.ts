@@ -73,6 +73,41 @@ describe("API worker", () => {
     expect(parseAssistantOutput(base)?.proposedActions[0].payload).toMatchObject({ borrowerFullName: "Allan Lobrigo" });
     expect(parseAssistantOutput({ ...base, proposedActions: [{ ...base.proposedActions[0], payload: { ...base.proposedActions[0].payload, borrowerFullName: undefined, borrowerId: "PENDING_BORROWER_ID" } }] })).toBeNull();
   });
+  it("accepts expanded interest and repayment terms and rejects impossible due dates", () => {
+    const base = {
+      intent: "prepare_action",
+      message: "Pakireview ang weekly loan.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerFullName: "Mica",
+          principalMinor: 10000,
+          currency: "PHP",
+          interestType: "percentage",
+          interestValue: 2,
+          interestPeriod: "one_time",
+          interestFrequency: "weekly",
+          dueDate: "2026-11-21",
+          repaymentTimingNote: "sa susunod na linggo",
+          repaymentFrequency: "weekly",
+          installmentCount: 4
+        },
+        summary: "I-save ang loan ni Mica",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    expect(parseAssistantOutput(base)?.proposedActions[0].payload).toMatchObject({
+      interestFrequency: "weekly",
+      repaymentFrequency: "weekly",
+      dueDate: "2026-11-21",
+      installmentCount: 4
+    });
+    const invalid = structuredClone(base);
+    invalid.proposedActions[0].payload.dueDate = "2026-02-31";
+    expect(parseAssistantOutput(invalid)).toBeNull();
+  });
+
   beforeEach(() => { loginAttempts = 0; });
   it("provides a public health endpoint", async () => {
     const response = await worker.fetch(new Request("https://example.test/health"), env);
@@ -318,7 +353,7 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("FINANCIAL CARE");
     expect(systemPrompt).toContain("ERROR RECOVERY");
     expect(systemPrompt).toContain("MULTI-TURN TRANSACTION STATE");
-    expect(systemPrompt).toContain("2026-11-14.10");
+    expect(systemPrompt).toContain("2026-11-14.11");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
@@ -481,6 +516,59 @@ describe("API worker", () => {
             interestType: "percentage",
             interestValue: 5,
             interestPeriod: "one_time"
+          },
+          requiresConfirmation: true
+        }]
+      });
+    } finally {
+      env.DB = originalDb;
+    }
+  });
+
+  it("recovers a no-interest loan and relative repayment note from Tagalog conversation history", async () => {
+    const originalDb = env.DB;
+    env.DB = {
+      prepare: (_sql: string) => ({
+        bind: (..._values: unknown[]) => ({
+          all: async () => ({ results: [] }),
+          first: async () => null,
+          run: async () => ({ success: true })
+        }),
+        all: async () => ({ results: [] }),
+        first: async () => null,
+        run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "I will prepare the loan." }))
+      .mockImplementationOnce(async () => ({ response: "Sorry, I could not format this." }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [
+          { role: "user", content: "pinautang ko si Mica nang 100 pesos ngayon araw. Babayaran niya sa susunod na linggo." },
+          { role: "assistant", content: "May interest po ba?" },
+          { role: "user", content: "5% one-time interest" },
+          { role: "assistant", content: "Ire-record ko ang 5% one-time interest." },
+          { role: "user", content: "Walang interest" },
+          { role: "assistant", content: "Kung tama na ang detalye, sabihin save para maitala ang loan." },
+          { role: "user", content: "save" }
+        ] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "prepare_action",
+        proposedActions: [{
+          type: "create_loan",
+          payload: {
+            borrowerFullName: "Mica",
+            principalMinor: 10000,
+            interestType: "none",
+            interestValue: 0,
+            interestFrequency: "one_time",
+            repaymentTimingNote: "sa susunod na linggo",
+            repaymentFrequency: "one_time"
           },
           requiresConfirmation: true
         }]

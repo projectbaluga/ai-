@@ -2,7 +2,7 @@ import "./style.css";
 import { reportsMarkup, bindReports } from "./reports";
 
 type Borrower = { id: string; full_name: string; phone?: string | null; notes?: string | null };
-type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string; interest_type: string; interest_value: number; interest_period: string };
+type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string; interest_type: string; interest_value: number; interest_period: string; interest_frequency?: string; due_date?: string | null; repayment_timing_note?: string | null; repayment_frequency?: string; installment_count?: number | null; installment_amount_minor?: number | null };
 type Payment = { id: string; loan_id: string; amount_minor: number; paid_at: string };
 type AuditEntry = { id: string; action: string; entity_type: string; entity_id: string; created_at: string };
 type ApiList<T> = { results: T[] };
@@ -137,7 +137,10 @@ function loanDetailsMarkup(loan: Loan) {
     <div><span class="detail-label">Principal recorded</span><strong>${peso(loan.principal_minor)}</strong></div>
     <div><span class="detail-label">Currency</span><strong>${escapeHtml(loan.currency)}</strong></div>
     <div><span class="detail-label">Interest type</span><strong>${escapeHtml(loan.interest_type)}</strong></div>
-    <div><span class="detail-label">Stored interest value</span><strong>${escapeHtml(String(loan.interest_value))} · ${escapeHtml(loan.interest_period)}</strong></div>
+    <div><span class="detail-label">Stored interest value</span><strong>${escapeHtml(loan.interest_type === "none" ? "Walang interest" : String(loan.interest_value) + " · " + (loan.interest_frequency ?? loan.interest_period))}</strong></div>
+    <div><span class="detail-label">Due date</span><strong>${escapeHtml(loan.due_date || "Walang exact date na naitala")}</strong></div>
+    <div><span class="detail-label">Napag-usapang bayaran</span><strong>${escapeHtml(loan.repayment_timing_note || "Wala")}</strong></div>
+    <div><span class="detail-label">Repayment schedule</span><strong>${escapeHtml(loan.repayment_frequency || "one_time")}</strong></div>
     <div><span class="detail-label">Status</span><strong>${escapeHtml(loan.status)}</strong></div>
   </div>
   <h4>Recorded payments (${payments.length})</h4>
@@ -515,19 +518,30 @@ function renderProposal(proposal: AssistantProposal) {
     return;
   }
   const heading = document.createElement("strong");
-  heading.textContent = "Proposed action · approval required";
+  heading.textContent = proposal.type === "create_loan" ? "Suriin ang detalye ng utang" : "Suriin ang gagawing pagbabago";
   const summary = document.createElement("p");
-  summary.textContent = proposal.summary;
+  summary.textContent = proposal.type === "create_loan"
+    ? "Pakitingnan kung tama ang mga detalye. Wala pang mase-save hangga't hindi ninyo pinipindot ang save."
+    : proposal.summary;
   const details = document.createElement("pre");
   if (proposal.type === "create_loan") {
     const payload = proposal.payload as Record<string, unknown>;
-    const borrower = typeof payload.borrowerFullName === "string" ? payload.borrowerFullName : "Existing borrower";
+    const borrower = typeof payload.borrowerFullName === "string" ? payload.borrowerFullName :
+      state.borrowers.find(item => item.id === payload.borrowerId)?.full_name ?? "Nakalista nang borrower";
     const principal = typeof payload.principalMinor === "number" ? (payload.principalMinor / 100).toLocaleString("en-PH", { style: "currency", currency: "PHP" }) : "—";
+    const frequency = String(payload.interestFrequency ?? payload.interestPeriod ?? "one_time");
+    const frequencyLabel: Record<string, string> = { one_time: "one-time", daily: "araw-araw", weekly: "lingguhan", monthly: "buwanan", annual: "taunan" };
     const interest = payload.interestType === "none" ? "Walang interest" :
       String(payload.interestValue) + (payload.interestType === "percentage" ? "%" : " pesos") +
-      (payload.interestPeriod === "monthly" ? " monthly" : " one-time");
-    details.textContent = "Borrower: " + borrower + (payload.borrowerFullName ? " (kung bago pa, irerehistro kasabay ng loan)" : "") +
-      "\nPrincipal: " + principal + "\nInterest: " + interest;
+      " · " + (frequencyLabel[frequency] ?? frequency);
+    const repaymentLabel: Record<string, string> = { one_time: "Isang bayaran", daily: "Araw-araw", weekly: "Lingguhan", biweekly: "Kada dalawang linggo", monthly: "Buwanan" };
+    details.textContent = "Hihiraman: " + borrower + (payload.borrowerFullName ? " (irehistro kung bago pa)" : "") +
+      "\nHalagang ipinahiram: " + principal + "\nInterest: " + interest +
+      (payload.dueDate ? "\nTakdang petsa: " + String(payload.dueDate) : "") +
+      (payload.repaymentTimingNote ? "\nNapag-usapang bayaran: " + String(payload.repaymentTimingNote) : "") +
+      (payload.repaymentFrequency ? "\nParaan ng bayad: " + (repaymentLabel[String(payload.repaymentFrequency)] ?? String(payload.repaymentFrequency)) : "") +
+      (payload.installmentCount ? "\nBilang ng hulog: " + String(payload.installmentCount) : "") +
+      (typeof payload.installmentAmountMinor === "number" ? "\nHalaga kada hulog: " + peso(payload.installmentAmountMinor) : "");
   } else {
     details.textContent = JSON.stringify(proposal.payload, null, 2);
   }
@@ -549,10 +563,10 @@ function renderProposal(proposal: AssistantProposal) {
       if (!response.ok || !data.actionId) throw new Error(data.error ?? "Could not prepare this action.");
       const notice = document.createElement("p");
       notice.className = "proposal-notice";
-      notice.textContent = "Awaiting your approval · expires in " + (data.expiresInMinutes ?? 15) + " minutes. Nothing is saved yet.";
+      notice.textContent = "Hindi pa ito nase-save. Pindutin ang button sa ibaba kung tama na ang lahat.";
       const confirm = document.createElement("button");
       confirm.className = "proposal-confirm";
-      confirm.textContent = "Confirm and save";
+      confirm.textContent = proposal.type === "create_loan" ? "I-save ang loan" : "Kumpirmahin at i-save";
       confirm.addEventListener("click", async () => {
         if (state.actionBusy || state.busy) return;
         state.actionBusy = true;
@@ -564,7 +578,7 @@ function renderProposal(proposal: AssistantProposal) {
           });
           const resultData = await result.json() as { error?: string; status?: string; borrowerCreated?: boolean };
           if (!result.ok) throw new Error(resultData.error ?? "The transaction could not be saved.");
-          notice.textContent = "Confirmed and saved successfully. Refreshing lending records…";
+          notice.textContent = "Nai-save na. Ina-update ang listahan ng records…";
           confirm.remove();
           await loadData();
           state.pendingReviews = state.pendingReviews.filter(item => item.actionId !== data.actionId);
