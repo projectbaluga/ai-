@@ -28,7 +28,8 @@ const env = {
 
 const authorized = { authorization: "Bearer test-secret" };
 
-describe("API worker", () => {\n  beforeEach(() => { loginAttempts = 0; });
+describe("API worker", () => {
+  beforeEach(() => { loginAttempts = 0; });
   it("provides a public health endpoint", async () => {
     const response = await worker.fetch(new Request("https://example.test/health"), env);
     expect(response.status).toBe(200);
