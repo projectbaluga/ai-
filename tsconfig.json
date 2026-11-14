@@ -9,5 +9,5 @@
     "lib": ["ES2022", "DOM"],
     "types": ["vite/client", "vitest/globals", "@cloudflare/workers-types"]
   },
-  "include": ["apps/**/*.ts", "workers/**/*.ts", "tests/**/*.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "workers/**/*.ts", "tests/**/*.ts"]
 }
