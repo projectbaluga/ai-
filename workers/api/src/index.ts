@@ -395,7 +395,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     // structured schema and continue through backend validation/confirmation.
     const lastUserMessage = messages[messages.length - 1].content;
     const firstPlainText = modelTextOutput(modelResult);
-    if (!parsed && firstPlainText && !firstPlainText.includes("{") && !isPotentialWriteRequest(lastUserMessage)) {
+    if (!parsed && firstPlainText && !isPotentialWriteRequest(lastUserMessage)) {
       return json({
         intent: "answer_question",
         message: firstPlainText,
@@ -412,7 +412,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       diagnosticOutput = await runLendingAssistantModel(env.AI, retryPrompt, messages);
       parsed = parseAssistantOutput(diagnosticOutput);
       const retryPlainText = modelTextOutput(diagnosticOutput);
-      if (!parsed && retryPlainText && !retryPlainText.includes("{") && !isPotentialWriteRequest(lastUserMessage)) {
+      if (!parsed && retryPlainText && !isPotentialWriteRequest(lastUserMessage)) {
         return json({
           intent: "answer_question",
           message: retryPlainText,
