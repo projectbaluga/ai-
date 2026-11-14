@@ -82,8 +82,10 @@ Money amounts ending in `Minor` are integer centavos (100 centavos = ₱1). The 
 - `GET /api/borrowers`
 - `GET /api/loans`
 - `GET /api/payments`
+- `GET /api/activity` (confirmed audit entries)
+- `GET /api/reports/payments?from=YYYY-MM-DD&to=YYYY-MM-DD` (on-demand recorded-payment totals and daily breakdown)
 
-All require owner authentication. These endpoints return stored records and do not infer outstanding balances.
+All require owner authentication. These endpoints return stored records and do not infer outstanding balances. Payment reports total only recorded payments in the selected inclusive date range.
 
 ## AI assistant
 
