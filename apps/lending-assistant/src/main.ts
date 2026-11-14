@@ -2,7 +2,7 @@ import "./style.css";
 import { borrowerFormMarkup, loanFormMarkup, paymentFormMarkup, bindRecordForms } from "./record-forms";
 import { reportsMarkup, bindReports } from "./reports";
 
-type Borrower = { id: string; full_name: string; phone?: string | null };
+type Borrower = { id: string; full_name: string; phone?: string | null; notes?: string | null };
 type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string };
 type Payment = { id: string; loan_id: string; amount_minor: number; paid_at: string };
 type AuditEntry = { id: string; action: string; entity_type: string; entity_id: string; created_at: string };
