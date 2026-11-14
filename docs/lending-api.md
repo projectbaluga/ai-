@@ -30,6 +30,8 @@ Supported action types:
 - `create_borrower`
 - `create_loan`
 - `record_payment`
+- `update_borrower`
+- `archive_borrower` (soft archive; history is retained)
 
 Example borrower preparation:
 
@@ -94,9 +96,9 @@ The Worker uses the Cloudflare Workers AI binding and `@cf/meta/llama-3.1-8b-ins
 ## Current implementation boundaries
 
 - The mobile-first dashboard, borrower/loan/payment views, borrower/loan/payment create forms, AI chat panel, browser voice input/output foundation, owner login screen, and explicit AI proposal review are in the frontend.
-- The API supports owner sessions, read-only collections, AI responses, and confirmed create-borrower/create-loan/record-payment actions.
-- Edit/archive workflows, advanced reports, configurable repayment schedules, and borrower/loan detail pages still need implementation. The Activity screen reads confirmed audit entries.
+- The API supports owner sessions, read-only collections, AI responses, confirmed create-borrower/create-loan/record-payment actions, and audited borrower updates/soft archives.
+- Borrower update/archive workflows are available; loan-term edits, loan closure workflows, configurable repayment schedules, and borrower/loan detail pages still need implementation. On-demand recorded-payment reports are available. The Activity screen reads confirmed audit entries.
 - No interest accrual, total payoff, principal allocation, penalties, or due-date calculations are exposed. Do not treat principal less total payments as a real balance until allocation rules are agreed.
 - Session cookies are Secure and intended for HTTPS. Production deployment must use same-origin frontend/API routing.
 - No Cloudflare resource IDs, secrets, database migrations, or deployment configuration have been applied. Do that only after GitHub implementation and CI are complete.
-- Apply database migrations in order before deploying the Worker.
+- Apply database migrations in order before deploying the Worker, including `0003_borrower_maintenance_actions.sql`.
