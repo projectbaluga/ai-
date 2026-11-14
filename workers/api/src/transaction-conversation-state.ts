@@ -61,7 +61,7 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
   }
 
   const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)[.!\s]*$/i.test(lastUser);
-  const assistantNamedAction = /\\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\\b/i.test(lastAssistant) && /[?؟]/.test(lastAssistant);
+  const assistantNamedAction = /\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\b/i.test(lastAssistant) && /[?؟]/.test(lastAssistant);
   if (affirmative && assistantNamedAction) {
     return {
       status: "confirming_action",
