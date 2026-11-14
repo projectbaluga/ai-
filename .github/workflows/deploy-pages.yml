@@ -1,25 +1,110 @@
-name: Deploy Lending PWA
+name: Deploy Pages
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  check:
+    name: CI Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
-      - run: npm ci
-      - run: npm run check
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run typecheck, tests, and build
+        run: npm run check
+
+  deploy:
+    name: Deploy Pages to Production
+    needs: check
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify required secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          MISSING=""
+          [ -z "$CLOUDFLARE_API_TOKEN" ] && MISSING="$MISSING CLOUDFLARE_API_TOKEN"
+          [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required GitHub secrets:$MISSING"
+            echo "::error::Configure them in Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "All required secrets are present."
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist/lending-assistant" ]; then
+            echo "::error::Build output dist/lending-assistant not found"
+            exit 1
+          fi
+          echo "Build output verified: dist/lending-assistant/"
+          ls -la dist/lending-assistant/ | head -20
+
+      - name: Verify Worker ai-workspace-api exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/ai-workspace-api")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::Worker ai-workspace-api not found (HTTP $HTTP_STATUS)."
+            echo "::error::Deploy the Worker first using the deploy-worker.yml workflow."
+            exit 1
+          fi
+          echo "Worker ai-workspace-api exists — service binding will resolve."
+
+      - name: Deploy Pages (ai-lending-assistant)
+        uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT }}
           workingDirectory: apps/lending-assistant
+          command: pages deploy
+
+      - name: Deployment summary
+        run: |
+          echo "## Pages Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend build | Complete |" >> $GITHUB_STEP_SUMMARY
+          echo "| Worker check | Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pages ai-lending-assistant | Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "URL: https://ai-lending-assistant.pages.dev" >> $GITHUB_STEP_SUMMARY
