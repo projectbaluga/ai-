@@ -11,6 +11,7 @@ The browser must never receive or store the owner secret.
 - A successful login returns an HttpOnly, Secure, SameSite=Strict cookie named `lending_session`, signed by the Worker and valid for eight hours.
 - `GET /api/auth/session` checks the session.
 - `POST /api/auth/logout` clears the browser cookie.
+- Login attempts are tracked in D1 by a SHA-256 hash of the Cloudflare client IP. Five attempts are allowed per 15-minute window; further attempts receive HTTP 429 with a `Retry-After` header. A successful login clears that IP’s counter.
 - Authenticated API calls use the cookie automatically when same-origin. Legacy bearer authentication remains available for trusted server-to-server calls only.
 - Cookie-authenticated mutating requests require an exact same-origin `Origin` header; missing or mismatched origins are rejected. Bearer authentication remains for trusted server-to-server calls.
 
