@@ -282,7 +282,7 @@ function renderContextPanel(query: string) {
     const description = document.createElement("p");
     description.className = "context-note";
     description.textContent = "You can generate a payment report for a date range you choose. It totals recorded payments only; it does not estimate balances, interest, or payoff amounts.";
-    card.appendChild(description);
+    rows.appendChild(description);
     const openReport = document.createElement("button");
     openReport.type = "button";
     openReport.className = "context-open";
@@ -292,7 +292,7 @@ function renderContextPanel(query: string) {
       renderPage();
       document.querySelector("#payment-report-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
-    card.appendChild(openReport);
+    rows.appendChild(openReport);
     count++;
   } else if (kind === "activity") {
     heading.textContent = "Confirmed activity";
