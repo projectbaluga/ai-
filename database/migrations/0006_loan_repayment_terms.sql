@@ -1,5 +1,5 @@
 -- Extend loan records with explicit repayment and interest cadence.
--- Existing records are preserved; legacy interest_period values are copied to the new field.
+-- Existing records are preserved and legacy interest_period values are copied to the new field.
 ALTER TABLE loans ADD COLUMN due_date TEXT
   CHECK (due_date IS NULL OR (length(due_date) = 10 AND due_date GLOB '????-??-??'));
 ALTER TABLE loans ADD COLUMN repayment_timing_note TEXT;
