@@ -177,6 +177,25 @@ describe("API worker", () => {
     expect(await response.json()).toEqual(payload);
   });
 
+  it("parses the Workers AI chat-completion choices message.content format", async () => {
+    const payload = { intent: "answer_question", message: "Kumusta po!", proposedActions: [], needsClarification: false };
+    env.AI.run.mockImplementationOnce(async () => ({
+      id: "test-completion",
+      object: "chat.completion",
+      created: 1,
+      model: "@cf/google/gemma-4-26b-a4b-it",
+      choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(payload) }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+    }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello?" }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(payload);
+    expect(env.AI.run).toHaveBeenCalledOnce();
+  });
+
   it("accepts plain text for ordinary non-transactional conversation", async () => {
     env.AI.run.mockImplementationOnce(async () => ({ response: "Kumusta po! Paano kita matutulungan?" }));
     const response = await worker.fetch(new Request("https://example.test/api/assistant", {
