@@ -414,7 +414,7 @@ export function isLendingOverviewRequest(message: string): boolean {
 
 export function removeInterestClarificationFromOverview(message: string): string {
   return message
-    .replace(/(?:\s*|[\\r\\n]+)(?:ano(?:\s+po)?\s+ang\s+napagkasunduan\s+niny[o]?\s+sa\s+interest|what\s+was\s+agreed\s+about\s+interest)\s*\\??\s*$/i, "")
+    .replace(/\s+(?:ano(?:\s+po)?\s+ang\s+napagkasunduan\s+niny[o]?\s+sa\s+interest|what\s+was\s+agreed\s+about\s+interest)\??\s*$/i, "")
     .trim();
 }
 
