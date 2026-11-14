@@ -579,7 +579,14 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
     null;
   // Interest cadence and repayment cadence are separate. Never reuse a bare
   // "one-time" interest answer as a repayment schedule.
-  if (!repaymentFrequency) return null;
+  if (!repaymentFrequency) {
+    return {
+      intent: "request_clarification",
+      message: "Ano po ang napagkasunduang paraan ng bayad: isang bayaran, araw-araw, lingguhan, kada dalawang linggo, o buwan-buwan? Iba po ito sa dalas ng pag-charge ng interest.",
+      proposedActions: [],
+      needsClarification: true
+    };
+  }
   const borrower = matches[0] ?? null;
   const interestDescription = interestType === "none" ? "walang interest" : interestValue + "% " + interestFrequency + " interest";
   const message = "Nakuha ko po. Ihahanda ko ang loan para kay " + borrowerName +
