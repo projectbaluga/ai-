@@ -364,7 +364,7 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("FINANCIAL CARE");
     expect(systemPrompt).toContain("ERROR RECOVERY");
     expect(systemPrompt).toContain("MULTI-TURN TRANSACTION STATE");
-    expect(systemPrompt).toContain("2026-11-14.11");
+    expect(systemPrompt).toContain("2026-11-14.12");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
