@@ -518,13 +518,16 @@ function renderProposal(proposal: AssistantProposal) {
     return;
   }
   const heading = document.createElement("strong");
-  heading.textContent = "Proposed action · approval required";
+  heading.textContent = proposal.type === "create_loan" ? "Suriin ang detalye ng utang" : "Suriin ang gagawing pagbabago";
   const summary = document.createElement("p");
-  summary.textContent = proposal.summary;
+  summary.textContent = proposal.type === "create_loan"
+    ? "Pakitingnan kung tama ang mga detalye. Wala pang mase-save hangga't hindi ninyo pinipindot ang save."
+    : proposal.summary;
   const details = document.createElement("pre");
   if (proposal.type === "create_loan") {
     const payload = proposal.payload as Record<string, unknown>;
-    const borrower = typeof payload.borrowerFullName === "string" ? payload.borrowerFullName : "Existing borrower";
+    const borrower = typeof payload.borrowerFullName === "string" ? payload.borrowerFullName :
+      state.borrowers.find(item => item.id === payload.borrowerId)?.full_name ?? "Nakalista nang borrower";
     const principal = typeof payload.principalMinor === "number" ? (payload.principalMinor / 100).toLocaleString("en-PH", { style: "currency", currency: "PHP" }) : "—";
     const frequency = String(payload.interestFrequency ?? payload.interestPeriod ?? "one_time");
     const frequencyLabel: Record<string, string> = { one_time: "one-time", daily: "araw-araw", weekly: "lingguhan", monthly: "buwanan", annual: "taunan" };
@@ -532,11 +535,11 @@ function renderProposal(proposal: AssistantProposal) {
       String(payload.interestValue) + (payload.interestType === "percentage" ? "%" : " pesos") +
       " · " + (frequencyLabel[frequency] ?? frequency);
     const repaymentLabel: Record<string, string> = { one_time: "Isang bayaran", daily: "Araw-araw", weekly: "Lingguhan", biweekly: "Kada dalawang linggo", monthly: "Buwanan" };
-    details.textContent = "Borrower: " + borrower + (payload.borrowerFullName ? " (kung bago pa, irerehistro kasabay ng loan)" : "") +
-      "\nPrincipal: " + principal + "\nInterest: " + interest +
-      (payload.dueDate ? "\nDue date: " + String(payload.dueDate) : "") +
+    details.textContent = "Hihiraman: " + borrower + (payload.borrowerFullName ? " (irehistro kung bago pa)" : "") +
+      "\nHalagang ipinahiram: " + principal + "\nInterest: " + interest +
+      (payload.dueDate ? "\nTakdang petsa: " + String(payload.dueDate) : "") +
       (payload.repaymentTimingNote ? "\nNapag-usapang bayaran: " + String(payload.repaymentTimingNote) : "") +
-      (payload.repaymentFrequency ? "\nSchedule: " + (repaymentLabel[String(payload.repaymentFrequency)] ?? String(payload.repaymentFrequency)) : "") +
+      (payload.repaymentFrequency ? "\nParaan ng bayad: " + (repaymentLabel[String(payload.repaymentFrequency)] ?? String(payload.repaymentFrequency)) : "") +
       (payload.installmentCount ? "\nBilang ng hulog: " + String(payload.installmentCount) : "") +
       (typeof payload.installmentAmountMinor === "number" ? "\nHalaga kada hulog: " + peso(payload.installmentAmountMinor) : "");
   } else {
@@ -560,10 +563,10 @@ function renderProposal(proposal: AssistantProposal) {
       if (!response.ok || !data.actionId) throw new Error(data.error ?? "Could not prepare this action.");
       const notice = document.createElement("p");
       notice.className = "proposal-notice";
-      notice.textContent = "Awaiting your approval · expires in " + (data.expiresInMinutes ?? 15) + " minutes. Nothing is saved yet.";
+      notice.textContent = "Hindi pa ito nase-save. Pindutin ang button sa ibaba kung tama na ang lahat.";
       const confirm = document.createElement("button");
       confirm.className = "proposal-confirm";
-      confirm.textContent = "Confirm and save";
+      confirm.textContent = proposal.type === "create_loan" ? "I-save ang loan" : "Kumpirmahin at i-save";
       confirm.addEventListener("click", async () => {
         if (state.actionBusy || state.busy) return;
         state.actionBusy = true;
@@ -575,7 +578,7 @@ function renderProposal(proposal: AssistantProposal) {
           });
           const resultData = await result.json() as { error?: string; status?: string; borrowerCreated?: boolean };
           if (!result.ok) throw new Error(resultData.error ?? "The transaction could not be saved.");
-          notice.textContent = "Confirmed and saved successfully. Refreshing lending records…";
+          notice.textContent = "Nai-save na. Ina-update ang listahan ng records…";
           confirm.remove();
           await loadData();
           state.pendingReviews = state.pendingReviews.filter(item => item.actionId !== data.actionId);
