@@ -330,7 +330,7 @@ function isPotentialWriteRequest(message: string): boolean {
     return false;
   }
   // Only explicit record-changing language should require a structured action.
-  return /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang)\s+ako|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i.test(normalized);
+  return /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang)\s+ako|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|register\s+(?!a\b|new\b)\w+|enroll\s+(?!a\b|new\b)\w+|add\s+.{1,80}\s+as\s+(?:a\s+)?borrower|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i.test(normalized);
 }
 
 
