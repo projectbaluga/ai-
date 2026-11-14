@@ -65,6 +65,55 @@ function validateAction(type: unknown, payload: unknown): { type: ActionType; pa
   return null;
 }
 
+const SESSION_COOKIE = "lending_session";
+const SESSION_SECONDS = 8 * 60 * 60;
+
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function fromBase64Url(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
+  return Uint8Array.from(binary, char => char.charCodeAt(0));
+}
+
+async function signSession(payload: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return toBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload))));
+}
+
+async function sessionCookie(secret: string): Promise<string> {
+  const payload = toBase64Url(new TextEncoder().encode(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS })));
+  const signature = await signSession(payload, secret);
+  return SESSION_COOKIE + "=" + payload + "." + signature + "; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=" + SESSION_SECONDS;
+}
+
+async function hasValidSession(request: Request, secret: string): Promise<boolean> {
+  const cookie = request.headers.get("cookie") ?? "";
+  const match = cookie.split(";").map(part => part.trim()).find(part => part.startsWith(SESSION_COOKIE + "="));
+  if (!match) return false;
+  const token = match.slice(SESSION_COOKIE.length + 1);
+  const dot = token.lastIndexOf(".");
+  if (dot < 1) return false;
+  const payload = token.slice(0, dot);
+  const signature = token.slice(dot + 1);
+  const expected = await signSession(payload, secret);
+  if (signature.length !== expected.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < signature.length; i++) mismatch |= signature.charCodeAt(i) ^ expected.charCodeAt(i);
+  if (mismatch !== 0) return false;
+  try {
+    const decoded = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))) as { exp?: number };
+    return typeof decoded.exp === "number" && decoded.exp > Math.floor(Date.now() / 1000);
+  } catch { return false; }
+}
+
+function authCookie(clear = false): string {
+  return clear ? SESSION_COOKIE + "=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0" : "";
+}
 async function readJson(request: Request): Promise<unknown> {
   try {
     return await request.json();
@@ -257,9 +306,35 @@ export default {
     }
 
     if (!env.OWNER_API_TOKEN) return json({ error: "Service is not configured." }, 503);
-    if (request.headers.get("authorization") !== `Bearer ${env.OWNER_API_TOKEN}`) {
-      return json({ error: "Unauthorized" }, 401);
+    if (request.method === "POST" && url.pathname === "/api/auth/login") {
+      const origin = request.headers.get("origin");
+      if (origin && origin !== url.origin) return json({ error: "Invalid request origin." }, 403);
+      const body = await readJson(request);
+      if (!isRecord(body) || !text(body.password, 512)) return json({ error: "Enter your owner passphrase." }, 400);
+      const supplied = new TextEncoder().encode(body.password);
+      const expected = new TextEncoder().encode(env.OWNER_API_TOKEN);
+      let mismatch = supplied.length ^ expected.length;
+      for (let i = 0; i < Math.max(supplied.length, expected.length); i++) mismatch |= (supplied[i] ?? 0) ^ (expected[i] ?? 0);
+      if (mismatch !== 0) return json({ error: "Incorrect owner passphrase." }, 401);
+      return new Response(JSON.stringify({ authenticated: true, expiresInSeconds: SESSION_SECONDS }), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": await sessionCookie(env.OWNER_API_TOKEN), "x-content-type-options": "nosniff" }
+      });
     }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/logout") {
+      return new Response(JSON.stringify({ authenticated: false }), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": authCookie(true) }
+      });
+    }
+
+    const bearerAuthorized = request.headers.get("authorization") === `Bearer ${env.OWNER_API_TOKEN}`;
+    const cookieAuthorized = await hasValidSession(request, env.OWNER_API_TOKEN);
+    if (!bearerAuthorized && !cookieAuthorized) return json({ error: "Unauthorized" }, 401);
+    const origin = request.headers.get("origin");
+    if (request.method !== "GET" && origin && origin !== url.origin) return json({ error: "Invalid request origin." }, 403);
+    if (request.method === "GET" && url.pathname === "/api/auth/session") return json({ authenticated: true, expiresInSeconds: SESSION_SECONDS });
 
     if (request.method === "GET" && url.pathname === "/api") {
       return json({ service: "lending-assistant-api", status: "transactions-enabled", ai: "enabled-when-configured" });
