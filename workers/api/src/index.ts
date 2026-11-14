@@ -131,6 +131,36 @@ async function hasValidSession(request: Request, secret: string): Promise<boolea
   } catch { return false; }
 }
 
+const LOGIN_ATTEMPT_LIMIT = 5;
+const LOGIN_WINDOW_SECONDS = 15 * 60;
+
+async function loginRateLimitState(request: Request, db: D1Database): Promise<{ limited: boolean; retryAfter: number }> {
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
+  const ipHash = toBase64Url(new Uint8Array(digest));
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff = now - LOGIN_WINDOW_SECONDS;
+  const row = await db.prepare(
+    "INSERT INTO login_rate_limits (ip_hash, window_started_at, attempts, updated_at) VALUES (?, ?, 1, ?) " +
+    "ON CONFLICT(ip_hash) DO UPDATE SET " +
+    "attempts = CASE WHEN login_rate_limits.window_started_at <= ? THEN 1 ELSE login_rate_limits.attempts + 1 END, " +
+    "window_started_at = CASE WHEN login_rate_limits.window_started_at <= ? THEN excluded.window_started_at ELSE login_rate_limits.window_started_at END, " +
+    "updated_at = excluded.updated_at RETURNING attempts, window_started_at"
+  ).bind(ipHash, now, now, cutoff, cutoff).first<{ attempts: number; window_started_at: number }>();
+  if (!row) throw new Error("Login rate limit could not be checked.");
+  return {
+    limited: row.attempts > LOGIN_ATTEMPT_LIMIT,
+    retryAfter: Math.max(1, row.window_started_at + LOGIN_WINDOW_SECONDS - now)
+  };
+}
+
+async function clearLoginRateLimit(request: Request, db: D1Database): Promise<void> {
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
+  const ipHash = toBase64Url(new Uint8Array(digest));
+  await db.prepare("DELETE FROM login_rate_limits WHERE ip_hash = ?").bind(ipHash).run();
+}
+
 function authCookie(clear = false): string {
   return clear ? SESSION_COOKIE + "=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0" : "";
 }
@@ -390,11 +420,28 @@ export default {
       if (origin && origin !== url.origin) return json({ error: "Invalid request origin." }, 403);
       const body = await readJson(request);
       if (!isRecord(body) || !text(body.password, 512)) return json({ error: "Enter your owner passphrase." }, 400);
+      let rateLimit: { limited: boolean; retryAfter: number };
+      try {
+        rateLimit = await loginRateLimitState(request, env.DB);
+      } catch {
+        return json({ error: "Login protection is temporarily unavailable. Please try again shortly." }, 503);
+      }
+      if (rateLimit.limited) {
+        return new Response(JSON.stringify({ error: "Too many login attempts. Please wait before trying again." }), {
+          status: 429,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "retry-after": String(rateLimit.retryAfter), "x-content-type-options": "nosniff" }
+        });
+      }
       const supplied = new TextEncoder().encode(body.password);
       const expected = new TextEncoder().encode(env.OWNER_API_TOKEN);
       let mismatch = supplied.length ^ expected.length;
       for (let i = 0; i < Math.max(supplied.length, expected.length); i++) mismatch |= (supplied[i] ?? 0) ^ (expected[i] ?? 0);
       if (mismatch !== 0) return json({ error: "Incorrect owner passphrase." }, 401);
+      try {
+        await clearLoginRateLimit(request, env.DB);
+      } catch {
+        return json({ error: "Login protection is temporarily unavailable. Please try again shortly." }, 503);
+      }
       return new Response(JSON.stringify({ authenticated: true, expiresInSeconds: SESSION_SECONDS }), {
         status: 200,
         headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": await sessionCookie(env.OWNER_API_TOKEN), "x-content-type-options": "nosniff" }
