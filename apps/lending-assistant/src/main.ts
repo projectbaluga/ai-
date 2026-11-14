@@ -183,21 +183,21 @@ function addMessage(role: "user" | "assistant", content: string) {
 function renderQuickReplies(message: string, list: HTMLElement) {
   const text = message.toLocaleLowerCase();
   const previousUser = [...state.messages].reverse().find(item => item.role === "user")?.content.toLocaleLowerCase() ?? "";
-  const recentLoan = /\\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\\b/.test(previousUser) ||
-    state.messages.slice(-8).some(item => item.role === "user" && /\\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\\b/i.test(item.content));
+  const recentLoan = /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\b/.test(previousUser) ||
+    state.messages.slice(-8).some(item => item.role === "user" && /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\b/i.test(item.content));
   if (!recentLoan) return;
   let choices: string[] = [];
-  if (/\\b(one[- ]?time|monthly|interest|interes|tubo)\\b/.test(text)) {
+  if (/\b(one[- ]?time|monthly|interest|interes|tubo)\b/.test(text)) {
     if (/one[- ]?time.{0,35}monthly|monthly.{0,35}one[- ]?time|paminsan|buwanan/.test(text)) {
       choices = ["One-time interest", "Monthly interest"];
-    } else if (/\\b(rate|percent|percentage|ilang percent|ilang porsyento)\\b/.test(text)) {
+    } else if (/\b(rate|percent|percentage|ilang percent|ilang porsyento)\b/.test(text)) {
       choices = ["5%", "10%", "Iba ang rate"];
     } else {
       choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
     }
-  } else if (/\\b(due|repay|repayment|bayad|babayaran|kailan.*bayad)\\b/.test(text)) {
+  } else if (/\b(due|repay|repayment|bayad|babayaran|kailan.*bayad)\b/.test(text)) {
     choices = ["Next month", "May specific date", "Wala pang napagkasunduan"];
-  } else if (/\\b(borrower|pangalan|sino|which person|kanino)\\b/.test(text)) {
+  } else if (/\b(borrower|pangalan|sino|which person|kanino)\b/.test(text)) {
     choices = state.borrowers.slice(0, 5).map(item => item.full_name);
   }
   if (!choices.length) return;
