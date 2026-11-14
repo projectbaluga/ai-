@@ -366,7 +366,7 @@ async function findTargetedRecords(db: D1Database, messages: AssistantMessage[])
   const predicates = terms.map(() => "instr(lower(CAST(search_value AS TEXT)), lower(?)) > 0").join(" OR ");
   const values = terms;
   const [borrowers, loans, payments] = await Promise.all([
-    db.prepare(`SELECT id, full_name FROM borrowers WHERE archived_at IS NULL AND (${predicates.replaceAll("search_value", "full_name")}) ORDER BY full_name LIMIT 10`).bind(...values).all(),
+    db.prepare(`SELECT id, full_name, phone FROM borrowers WHERE archived_at IS NULL AND (${predicates.replaceAll("search_value", "full_name")}) ORDER BY full_name LIMIT 10`).bind(...values).all(),
     db.prepare(`SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY l.created_at DESC LIMIT 10`).bind(...values, ...values).all(),
     db.prepare(`SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(p.id), lower(?)) > 0 OR instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY p.paid_at DESC LIMIT 10`).bind(...values, ...terms.flatMap(term => [term, term])).all()
   ]);
@@ -416,7 +416,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   if (needsRecordContext) {
     try {
       const [borrowerRows, loanRows, paymentRows] = await Promise.all([
-        env.DB.prepare("SELECT id, full_name FROM borrowers WHERE archived_at IS NULL ORDER BY full_name LIMIT 30").all<{ id: string; full_name: string }>(),
+        env.DB.prepare("SELECT id, full_name, phone FROM borrowers WHERE archived_at IS NULL ORDER BY full_name LIMIT 30").all<{ id: string; full_name: string }>(),
         env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
         env.DB.prepare("SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id ORDER BY p.paid_at DESC LIMIT 30").all<Record<string, unknown>>()
       ]);
