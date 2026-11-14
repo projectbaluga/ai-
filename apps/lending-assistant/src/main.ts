@@ -111,7 +111,7 @@ function addMessage(role: "user" | "assistant", content: string) {
   const bubble = document.createElement("div");
   bubble.className = `message-bubble ${role}`;
   bubble.textContent = content;
-  list.append(bubble);
+  list.appendChild(bubble);
   if (role === "assistant" && state.voiceMode && "speechSynthesis" in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(content);
