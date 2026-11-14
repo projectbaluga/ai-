@@ -1,4 +1,5 @@
 import "./style.css";
+import { borrowerFormMarkup, loanFormMarkup, paymentFormMarkup, bindRecordForms } from "./record-forms";
 
 type Borrower = { id: string; full_name: string; phone?: string | null };
 type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string };
@@ -85,6 +86,14 @@ function renderPage() {
     target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">LENDING PORTFOLIO</p><h1>Loans</h1><p class="muted">Review principal amounts and loan status.</p></div></div><section class="list-card">${state.connected && state.loans.length ? state.loans.map(l => `<div class="record-row"><span class="record-avatar loan-avatar">₱</span><div><strong>${peso(l.principal_minor)}</strong><small>${escapeHtml(l.currency)} · ${escapeHtml(l.status)}</small></div><span class="status-tag">${escapeHtml(l.status)}</span></div>`).join("") : empty("Loan records will appear here after secure owner login.")}</section>`;
   } else {
     target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">AUDIT TRAIL</p><h1>Activity</h1><p class="muted">A clear history of recorded lending activity.</p></div></div><section class="list-card">${state.connected && state.payments.length ? state.payments.map(p => `<div class="record-row"><span class="record-avatar loan-avatar">₱</span><div><strong>Payment · ${peso(p.amount_minor)}</strong><small>${new Date(p.paid_at).toLocaleString("en-PH")}</small></div></div>`).join("") : empty("Your activity history will appear here after secure owner login.")}</section>`;
+  }
+  if (state.page === "borrowers") {
+    target.insertAdjacentHTML("afterbegin", borrowerFormMarkup());
+    bindRecordForms(target, loadData);
+  }
+  if (state.page === "loans") {
+    target.insertAdjacentHTML("afterbegin", loanFormMarkup(state.borrowers) + paymentFormMarkup(state.loans, state.borrowers));
+    bindRecordForms(target, loadData);
   }
   target.querySelectorAll<HTMLElement>("[data-page]").forEach(el => el.addEventListener("click", () => { state.page = el.dataset.page ?? "home"; renderPage(); }));
 }
