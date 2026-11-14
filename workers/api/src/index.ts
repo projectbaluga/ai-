@@ -190,7 +190,7 @@ function searchTermsFromMessages(messages: AssistantMessage[]): string[] {
     "borrower", "borrowers", "loan", "loans", "payment", "payments", "record", "records"
   ]);
   const recentUserText = messages.filter(message => message.role === "user").slice(-4).reverse().map(message => message.content).join(" ");
-  return [...new Set(recentUserText.normalize("NFC").match(/[\\p{L}\\p{N}-]{3,}/gu) ?? [])]
+  return [...new Set(recentUserText.normalize("NFC").match(/[\p{L}\p{N}-]{3,}/gu) ?? [])]
     .filter(term => !ignored.has(term.toLocaleLowerCase()))
     .slice(0, 8);
 }
