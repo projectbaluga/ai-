@@ -519,10 +519,21 @@ function renderProposal(proposal: AssistantProposal) {
   const summary = document.createElement("p");
   summary.textContent = proposal.summary;
   const details = document.createElement("pre");
-  details.textContent = JSON.stringify(proposal.payload, null, 2);
+  if (proposal.type === "create_loan") {
+    const payload = proposal.payload as Record<string, unknown>;
+    const borrower = typeof payload.borrowerFullName === "string" ? payload.borrowerFullName : "Existing borrower";
+    const principal = typeof payload.principalMinor === "number" ? (payload.principalMinor / 100).toLocaleString("en-PH", { style: "currency", currency: "PHP" }) : "—";
+    const interest = payload.interestType === "none" ? "Walang interest" :
+      String(payload.interestValue) + (payload.interestType === "percentage" ? "%" : " pesos") +
+      (payload.interestPeriod === "monthly" ? " monthly" : " one-time");
+    details.textContent = "Borrower: " + borrower + (payload.borrowerFullName ? " (bagong borrower; irerehistro kasabay ng loan)" : "") +
+      "\\nPrincipal: " + principal + "\\nInterest: " + interest;
+  } else {
+    details.textContent = JSON.stringify(proposal.payload, null, 2);
+  }
   const prepare = document.createElement("button");
   prepare.className = "proposal-button";
-  prepare.textContent = "Review transaction details";
+  prepare.textContent = proposal.type === "create_loan" ? "I-save ang loan na ito" : "Review transaction details";
   prepare.addEventListener("click", async () => {
     if (state.actionBusy || state.busy) return;
     state.actionBusy = true;
@@ -551,13 +562,15 @@ function renderProposal(proposal: AssistantProposal) {
           const result = await fetch("/api/actions/" + encodeURIComponent(data.actionId!) + "/confirm", {
             method: "POST", credentials: "same-origin"
           });
-          const resultData = await result.json() as { error?: string; status?: string };
+          const resultData = await result.json() as { error?: string; status?: string; borrowerCreated?: boolean };
           if (!result.ok) throw new Error(resultData.error ?? "The transaction could not be saved.");
           notice.textContent = "Confirmed and saved successfully. Refreshing lending records…";
           confirm.remove();
           await loadData();
           state.pendingReviews = state.pendingReviews.filter(item => item.actionId !== data.actionId);
-          addMessage("assistant", "Confirmed po. Na-save ang transaction at na-refresh ang lending records.");
+          addMessage("assistant", resultData.borrowerCreated
+            ? "Nairehistro si " + String((proposal.payload as Record<string, unknown>).borrowerFullName ?? "ang borrower") + " at na-save ang loan. Na-refresh na ang lending records."
+            : "Na-save ang loan. Na-refresh na ang lending records.");
         } catch (error) {
           notice.textContent = error instanceof Error ? error.message : "Save failed. Please check the records.";
           confirm.disabled = false;
@@ -596,6 +609,9 @@ function renderProposal(proposal: AssistantProposal) {
       card.appendChild(cancel);
       state.pendingReviews.push({ actionId: data.actionId, notice, confirm, cancel });
       state.actionBusy = false;
+      // One tap on the clearly labelled save button is the owner's approval:
+      // prepare the protected action and confirm it immediately.
+      if (proposal.type === "create_loan") confirm.click();
     } catch (error) {
       prepare.disabled = false;
       prepare.textContent = error instanceof Error ? error.message : "Try again";
