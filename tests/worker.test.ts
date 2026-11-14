@@ -275,7 +275,7 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("FINANCIAL CARE");
     expect(systemPrompt).toContain("ERROR RECOVERY");
     expect(systemPrompt).toContain("MULTI-TURN TRANSACTION STATE");
-    expect(systemPrompt).toContain("2026-11-14.8");
+    expect(systemPrompt).toContain("2026-11-14.9");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
@@ -451,6 +451,26 @@ describe("API worker", () => {
       needsClarification: true
     });
     expect(env.AI.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops a cancelled transaction before calling the model or preparing an action", async () => {
+    env.AI.run.mockClear();
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ language: "en", messages: [
+        { role: "user", content: "I lent Jeffrey Peconcillo 1000 pesos." },
+        { role: "assistant", content: "What interest terms did you agree on?" },
+        { role: "user", content: "Cancel that loan." }
+      ] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "answer_question",
+      message: "Understood. I won't proceed with that transaction. No records were changed.",
+      proposedActions: [],
+      needsClarification: false
+    });
+    expect(env.AI.run).not.toHaveBeenCalled();
   });
 
   it("returns a safe clarification instead of an unsupported-format error for malformed write output", async () => {
