@@ -233,10 +233,10 @@ function renderContextPanel(query: string) {
     count++;
   };
   let kind = "";
-  if (paymentIdMatches.length || has("payment", "bayad", "hulog", "nabayad", "payments")) kind = "payments";
+  if (has("report", "reports", "ulat", "statement", "collection summary")) kind = "reports";
+  else if (paymentIdMatches.length || has("payment", "bayad", "hulog", "nabayad", "payments")) kind = "payments";
   else if (loanIdMatches.length || has("loan", "loans", "pautang", "utang record", "active loan")) kind = "loans";
   else if (has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") || namedBorrowers.length || ambiguousBorrowers.length) kind = "borrowers";
-  else if (has("report", "reports", "ulat", "statement", "collection summary")) kind = "reports";
   else if (has("activity", "history", "kasaysayan", "recent activity")) kind = "activity";
   else if (has("overview", "dashboard", "summary", "kabuuan", "workspace")) kind = "overview";
   if (kind === "borrowers") {
@@ -296,7 +296,31 @@ function renderContextPanel(query: string) {
     count++;
   } else if (kind === "activity") {
     heading.textContent = "Confirmed activity";
-    state.activity.slice(0, 12).forEach(a => addRow(a.action.replaceAll("_", " "), a.entity_type + " · " + new Date(a.created_at).toLocaleString("en-PH"), a.entity_type === "borrower" ? "borrowers" : "loans", a.entity_id, "activity"));
+    state.activity.slice(0, 12).forEach(a => {
+      const payment = a.entity_type === "payment" ? state.payments.find(item => item.id === a.entity_id) : undefined;
+      const targetPage = a.entity_type === "borrower" ? "borrowers" : "loans";
+      const targetId = payment ? payment.loan_id : a.entity_id;
+      const targetExists = a.entity_type === "borrower"
+        ? state.borrowers.some(item => item.id === targetId)
+        : state.loans.some(item => item.id === targetId);
+      if (targetExists) {
+        addRow(a.action.replaceAll("_", " "), a.entity_type + " · " + new Date(a.created_at).toLocaleString("en-PH"), targetPage, targetId, "activity");
+      } else {
+        const item = document.createElement("article");
+        item.className = "context-row";
+        const copy = document.createElement("div");
+        copy.className = "context-row-copy";
+        const strong = document.createElement("strong");
+        strong.textContent = a.action.replaceAll("_", " ");
+        const small = document.createElement("small");
+        small.textContent = a.entity_type + " · " + new Date(a.created_at).toLocaleString("en-PH") + " · Record unavailable";
+        copy.appendChild(strong);
+        copy.appendChild(small);
+        item.appendChild(copy);
+        rows.appendChild(item);
+        count++;
+      }
+    });
   } else if (kind === "overview") {
     heading.textContent = "Verified workspace snapshot";
     [
