@@ -83,4 +83,29 @@ describe("transaction conversation state", () => {
       carriesTransactionContext: false
     });
   });
+
+  it("carries the active loan when the owner answers a principal question, not only an interest question", () => {
+    const messages: AssistantMessage[] = [
+      { role: "user", content: "Pinautang ko si Mica." },
+      { role: "assistant", content: "Magkano ang ipinahiram mo kay Mica?" },
+      { role: "user", content: "1500 pesos." }
+    ];
+    expect(buildTransactionConversationState(messages)).toMatchObject({
+      status: "continuing_transaction",
+      carriesTransactionContext: true
+    });
+  });
+
+  it("treats a correction to a requested transaction detail as a revision", () => {
+    const messages: AssistantMessage[] = [
+      { role: "user", content: "Pinautang ko si Mica ng 1000 pesos." },
+      { role: "assistant", content: "May iba pa bang napagkasunduan sa interest?" },
+      { role: "user", content: "Actually, 1500 pesos pala." }
+    ];
+    expect(buildTransactionConversationState(messages)).toMatchObject({
+      status: "revising_transaction",
+      carriesTransactionContext: true
+    });
+  });
+
 });

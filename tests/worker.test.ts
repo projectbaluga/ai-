@@ -358,13 +358,15 @@ describe("API worker", () => {
       recordContext: { available: false },
       targetedMatches: { searched: false }
     });
-    expect(systemPrompt).toContain("NATURAL HUMAN CONVERSATION");
+    expect(systemPrompt).toContain("LANGUAGE AND TONE");
     expect(systemPrompt).toContain("CONTEXT THREADING");
-    expect(systemPrompt).toContain("NO REPEATED QUESTIONS");
-    expect(systemPrompt).toContain("FINANCIAL CARE");
+    expect(systemPrompt).toContain("CORRECTIONS AND SHORT REPLIES");
+    expect(systemPrompt).toContain("FINANCIAL FACT BOUNDARIES");
     expect(systemPrompt).toContain("ERROR RECOVERY");
-    expect(systemPrompt).toContain("MULTI-TURN TRANSACTION STATE");
-    expect(systemPrompt).toContain("2026-11-14.12");
+    expect(systemPrompt).toContain("TRANSACTION PACING");
+    expect(systemPrompt).toContain("REASONING DISCIPLINE");
+    expect(systemPrompt).toContain("ACTION OUTPUT CONTRACT");
+    expect(systemPrompt).toContain("2026-11-14.14");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
@@ -637,7 +639,7 @@ describe("API worker", () => {
       proposedActions: []
     });
     expect(env.AI.run).toHaveBeenCalledOnce();
-    expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 1200, temperature: 0.35 }));
+    expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 2400, temperature: 0.35, chat_template_kwargs: { enable_thinking: true } }));
   });
 
   it("carries an explicit confirmation forward when the previous assistant turn named the write action", async () => {

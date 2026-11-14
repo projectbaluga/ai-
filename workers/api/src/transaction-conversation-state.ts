@@ -15,8 +15,8 @@ export interface TransactionConversationState {
   instruction: string;
 }
 
-const LOAN_EVENT = /\b(?:nagpautang|magpautang|pinahiram|nangutang|umutang|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i;
-const TERMS_QUESTION = /\b(?:interest|loan terms|interest type|interest value|interest period|daily|weekly|monthly|tubo|patong)\b/i;
+const LOAN_EVENT = /\b(?:nagpautang|magpautang|pinautang|pinahiram|nangutang|umutang|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i;
+const TRANSACTION_DETAIL_QUESTION = /\b(?:interest|loan terms|interest type|interest value|interest period|principal|amount|halaga|magkano|borrower|pangalan|name|phone|contact|due date|due|date|kailan|bayad|hulog|repayment|frequency|tubo|patong|porsiyento|ilang)\b/i;
 
 export function isExplicitTransactionCancellation(message: string): boolean {
   return /^(?:please\s+)?(?:cancel|stop|never\s*mind|forget\s+it|do\s+not\s+proceed|don['’]?t\s+proceed|huwag\s+na|wag\s+na|hindi\s+na|kanselahin|itigil)(?:\b|$)[\s.!?,-]*.*$/i.test(message.trim());
@@ -37,12 +37,12 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
   const lastAssistant = lastAssistantIndex >= 0 ? messages[lastAssistantIndex].content : "";
   const recent = messages.slice(-10);
   const hasRecentLoanNarrative = recent.some(message => message.role === "user" && LOAN_EVENT.test(message.content));
-  const assistantAskedForTerms = TERMS_QUESTION.test(lastAssistant) && /[?؟]/.test(lastAssistant);
+  const assistantAskedForTransactionDetail = TRANSACTION_DETAIL_QUESTION.test(lastAssistant) && /[?؟]/.test(lastAssistant);
   const isShortFollowup = lastUser.length <= 180 && !/[?؟]/.test(lastUser);
   const suppliesTransactionDetail = /\d|%|\b(?:daily|weekly|monthly|one[- ]?time|fixed|percentage|araw|linggo|buwan|bukas|tomorrow|next\s+month|end\s+of\s+the\s+month|no\s+interest|without\s+interest|walang\s+tubo|walang\s+interest)\b/i.test(lastUser);
   const correction = /\b(?:actually|correction|instead|change|correct|mali|palitan|palit|ang ibig kong sabihin|dapat)\b/i.test(lastUser);
   const isNewLoanEvent = LOAN_EVENT.test(lastUser);
-  if (!isNewLoanEvent && hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail && correction) {
+  if (!isNewLoanEvent && hasRecentLoanNarrative && isShortFollowup && assistantAskedForTransactionDetail && suppliesTransactionDetail && correction) {
     return {
       status: "revising_transaction",
       cancelled: false,
@@ -51,7 +51,7 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
     };
   }
 
-  if (!isNewLoanEvent && hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail) {
+  if (!isNewLoanEvent && hasRecentLoanNarrative && isShortFollowup && assistantAskedForTransactionDetail && suppliesTransactionDetail) {
     return {
       status: "continuing_transaction",
       cancelled: false,
