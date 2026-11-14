@@ -5,6 +5,7 @@ export type TransactionConversationStatus =
   | "continuing_transaction"
   | "revising_transaction"
   | "new_transaction"
+  | "confirming_action"
   | "independent_turn";
 
 export interface TransactionConversationState {
@@ -55,6 +56,17 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
       cancelled: false,
       carriesTransactionContext: true,
       instruction: "The latest message is a follow-up to the active loan conversation. Carry forward the borrower, principal, and other previously stated facts. Add the new detail without asking the owner to repeat information."
+    };
+  }
+
+  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)[.!\\s]*$/i.test(lastUser);
+  const assistantNamedAction = /\\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\\b/i.test(lastAssistant) && /[?؟]/.test(lastAssistant);
+  if (affirmative && assistantNamedAction) {
+    return {
+      status: "confirming_action",
+      cancelled: false,
+      carriesTransactionContext: true,
+      instruction: "The owner affirmatively accepted the specific action described in the immediately preceding assistant turn. Carry forward only that action and its stated target; prepare it for review only if all required fields and verified IDs are available. Do not commit it without the app's separate owner confirmation."
     };
   }
 
