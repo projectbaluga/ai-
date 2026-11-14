@@ -489,7 +489,7 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
       { value: "monthly", regex: /\b(?:monthly|buwan(?:an)?|kada buwan)\b/gi },
       { value: "annual", regex: /\b(?:annually|annual|yearly|taunan|kada taon)\b/gi }
     ];
-    const found = frequencyMatches.map(item => ({ value: item.value, index: [...userText.matchAll(item.regex)].at(-1)?.index ?? -1 }))
+    const found = frequencyMatches.map(item => ({ value: item.value, index: [...interestTermText.matchAll(item.regex)].at(-1)?.index ?? -1 }))
       .filter(item => item.index >= 0).sort((a, b) => b.index - a.index);
     if (!found.length) return null;
     interestFrequency = found[0].value;
@@ -497,10 +497,10 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
   const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|bukas|tomorrow)/i);
   const explicitDateMatch = userText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   const dueDate = explicitDateMatch && isIsoDate(explicitDateMatch[1]) ? explicitDateMatch[1] : undefined;
-  const repaymentFrequency = /(?:weekly payments|weekly hulog|kada linggo ang hulog|every week)/i.test(userText) ? "weekly" :
-    /(?:daily payments|daily hulog|araw-araw ang hulog|every day)/i.test(userText) ? "daily" :
-    /(?:biweekly|every two weeks|kada dalawang linggo)/i.test(userText) ? "biweekly" :
-    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|every month)/i.test(userText) ? "monthly" : "one_time";
+  const repaymentFrequency = /(?:weekly payments|weekly hulog|kada linggo ang hulog)/i.test(userText) ? "weekly" :
+    /(?:daily payments|daily hulog|araw-araw ang hulog)/i.test(userText) ? "daily" :
+    /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ? "biweekly" :
+    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog)/i.test(userText) ? "monthly" : "one_time";
   const borrower = matches[0] ?? null;
   const interestDescription = interestType === "none" ? "walang interest" : interestValue + "% " + interestFrequency + " interest";
   const message = "Nakuha ko po. Ihahanda ko ang loan para kay " + borrowerName +
