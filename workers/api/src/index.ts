@@ -471,7 +471,14 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
   if (!Number.isFinite(principal) || principal <= 0 || !Number.isSafeInteger(principalMinor)) return null;
 
   const noInterestMatch = [...userText.matchAll(/\b(?:walang\s+(?:interest|tubo)|interest[- ]?free|no\s+interest)\b/gi)].at(-1);
-  const interestTermText = messages.filter(message => message.role === "user" && /\d+(?:\.\d+)?\s*%/.test(message.content)).map(message => message.content).join(" ");
+  const interestTermText = messages.map((message, index) => ({ message, index }))
+    .filter(({ message, index }) => message.role === "user" && (
+      /%|interest|tubo/i.test(message.content) ||
+      /interest|interest type|interest period|interest frequency/i.test(
+        [...messages.slice(0, index)].reverse().find(previous => previous.role === "assistant")?.content ?? ""
+      )
+    ))
+    .map(({ message }) => message.content).join(" ");
   const percentMatches = [...userText.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
   const lastPercent = percentMatches.at(-1);
   const noInterest = Boolean(noInterestMatch && (!lastPercent || noInterestMatch.index! > lastPercent.index!));
