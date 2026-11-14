@@ -52,12 +52,34 @@ describe("Worker D1 transaction integration", () => {
   beforeEach(async () => {
     await db.batch([
       db.prepare("DROP TRIGGER IF EXISTS force_audit_failure"),
-      db.prepare("DELETE FROM payments"),
+      db.prepare("DELETE FROM payments"),\n      db.prepare("DELETE FROM login_rate_limits"),
       db.prepare("DELETE FROM audit_log"),
       db.prepare("DELETE FROM pending_actions"),
       db.prepare("DELETE FROM loans"),
       db.prepare("DELETE FROM borrowers")
     ]);
+  });
+
+  it("enforces and clears the persistent per-IP owner login limit", async () => {
+    const login = (password: string, ip: string) => worker.fetch(new Request("https://integration.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+      body: JSON.stringify({ password })
+    }), testEnv);
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      expect((await login("incorrect", "198.51.100.10")).status).toBe(401);
+    }
+    const blocked = await login("d1-integration-test-secret", "198.51.100.10");
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
+
+    const separateIpLogin = await login("d1-integration-test-secret", "198.51.100.11");
+    expect(separateIpLogin.status).toBe(200);
+
+    const resetIpLogin = await login("d1-integration-test-secret", "198.51.100.12");
+    expect(resetIpLogin.status).toBe(200);
+    expect((await login("incorrect", "198.51.100.12")).status).toBe(401);
   });
 
   it("commits the borrower, audit event, and pending-action status together", async () => {
