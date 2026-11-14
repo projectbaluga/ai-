@@ -148,5 +148,6 @@ describe("API worker", () => {
       proposedActions: []
     });
     expect(env.AI.run).toHaveBeenCalledOnce();
+    expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 480, temperature: 0.35 }));
   });
 });
