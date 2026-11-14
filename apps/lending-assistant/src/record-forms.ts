@@ -1,4 +1,4 @@
-type BorrowerOption = { id: string; full_name: string };
+type BorrowerOption = { id: string; full_name: string; phone?: string | null; notes?: string | null };
 type LoanOption = { id: string; borrower_id: string; principal_minor: number; status: string };
 
 function safe(value: string): string {
@@ -116,8 +116,8 @@ export function bindRecordForms(root: HTMLElement, refresh: () => Promise<void>,
     if (!borrower) return;
     const fullName = window.prompt("Borrower full name", borrower.full_name);
     if (!fullName || !fullName.trim()) return;
-    const phone = window.prompt("Phone number (leave blank if none)", "");
-    const notes = window.prompt("Notes (optional)", "");
+    const phone = window.prompt("Phone number (leave blank if none)", borrower.phone ?? "");
+    const notes = window.prompt("Notes (optional)", borrower.notes ?? "");
     const target = root.querySelector<HTMLElement>("#record-review");
     if (target) void prepareAndReview("update_borrower", { borrowerId: borrower.id, fullName: fullName.trim(), phone: phone?.trim() || null, notes: notes?.trim() || null }, "Update borrower", target, refresh);
   }));
