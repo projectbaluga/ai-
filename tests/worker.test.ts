@@ -313,7 +313,7 @@ describe("API worker", () => {
       body: JSON.stringify({ messages: [{ role: "user", content: "private test message" }] })
     }), env);
     expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({ error: expect.stringContaining("unsupported format"), requestId: expect.any(String) });
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("could not format"), requestId: expect.any(String) });
     expect(errorSpy).toHaveBeenCalledOnce();
     expect(env.AI.run).toHaveBeenCalledTimes(2);
     expect(String(errorSpy.mock.calls[0][1])).not.toContain("private test message");
