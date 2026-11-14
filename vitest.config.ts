@@ -1,6 +1,19 @@
+import { readdir, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
-import { readD1Migrations } from "@cloudflare/vitest-plugin/config";
 import { defineConfig } from "vitest/config";
+
+async function readMigrations() {
+  const directory = fileURLToPath(new URL("./database/migrations", import.meta.url));
+  const names = (await readdir(directory)).filter(name => /^\\d+.*\\.sql$/.test(name)).sort();
+  return Promise.all(names.map(async name => ({
+    name,
+    queries: (await readFile(new URL(`./database/migrations/${name}`, import.meta.url), "utf8"))
+      .split(";")
+      .map(query => query.trim())
+      .filter(Boolean)
+  })));
+}
 
 export default defineConfig({
   plugins: [
@@ -9,9 +22,7 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-11-14",
         d1Databases: ["DB"],
-        bindings: {
-          TEST_MIGRATIONS: await readD1Migrations(new URL("./database/migrations", import.meta.url).pathname)
-        }
+        bindings: { TEST_MIGRATIONS: await readMigrations() }
       }
     }))
   ],
