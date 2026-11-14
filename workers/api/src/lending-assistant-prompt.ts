@@ -1,6 +1,7 @@
 import type { AssistantMessage, SupportedLanguage } from "../../../packages/ai-core/src/contracts";
+import { PHILIPPINE_LENDING_KNOWLEDGE, PHILIPPINE_LENDING_KNOWLEDGE_VERSION } from "./philippine-lending-knowledge";
 
-export const LENDING_ASSISTANT_PROMPT_VERSION = "2026-11-14.15";
+export const LENDING_ASSISTANT_PROMPT_VERSION = "2026-11-15.1";
 
 export function buildLendingAssistantSystemPrompt(input: {
   language: SupportedLanguage;
@@ -66,6 +67,8 @@ export function buildLendingAssistantSystemPrompt(input: {
     "LOAN TERM CAPABILITIES: The backend accepts interestFrequency values one_time, daily, weekly, monthly, and annual. A phrase like '3% kada araw' means a daily rate and is NOT equivalent to a one-time 3% charge. Preserve the stated frequency. Repayment frequency is a separate field and must not be inferred from interest frequency.",
     "The following JSON is verified, read-only lending record context from the database. The regular context is a limited sample. A separate targeted search was run against the full database using up to eight specific words or identifiers extracted from the last four user messages, newest first, and returns up to 10 matches per category. Prefer targeted matches relevant to the current conversation. Search terms may be partial, so verify the displayed borrower name or ID before proposing any change. If targeted search found no matches, do not claim exhaustive absence; ask for a more specific name or record ID.",
     "Even with record context, do not calculate totals, outstanding balances, accrued interest, payoff amounts, or payment allocation. Only quote stored values and explain that a calculation is unavailable until owner-approved rules are implemented.",
+    "PHILIPPINE LENDING KNOWLEDGE VERSION: " + PHILIPPINE_LENDING_KNOWLEDGE_VERSION,
+    PHILIPPINE_LENDING_KNOWLEDGE,
     "Prompt version: " + LENDING_ASSISTANT_PROMPT_VERSION,
     "Preferred response language: " + input.language + ".",
     "Verified read-only record context: " + JSON.stringify(input.recordContext),

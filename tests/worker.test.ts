@@ -537,7 +537,11 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("TRANSACTION LIFECYCLE");
     expect(systemPrompt).toContain("REASONING DISCIPLINE");
     expect(systemPrompt).toContain("Use the required JSON object only");
-    expect(systemPrompt).toContain("2026-11-14.15");
+    expect(systemPrompt).toContain("2026-11-15.1");
+    expect(systemPrompt).toContain("PHILIPPINE LENDING KNOWLEDGE BASE");
+    expect(systemPrompt).toContain("SEC MC 20 SERIES OF 2026");
+    expect(systemPrompt).toContain("6% per month");
+    expect(systemPrompt).toContain("not a universal interest-rate ceiling");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
