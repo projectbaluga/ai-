@@ -588,7 +588,8 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     const verifiedLoanProposal = isPotentialWriteRequest(messages)
       ? buildVerifiedLoanProposal(messages, recordContext)
       : null;
-    if (verifiedLoanProposal && (!parsed || parsed.proposedActions.length === 0 && parsed.needsClarification)) {
+    if (verifiedLoanProposal && (!parsed || parsed.proposedActions.length === 0 && parsed.needsClarification ||
+      parsed.proposedActions.length > 0 && parsed.proposedActions.every(action => action.type === "create_borrower"))) {
       return json(verifiedLoanProposal);
     }
 
