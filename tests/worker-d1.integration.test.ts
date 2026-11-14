@@ -149,6 +149,31 @@ describe("Worker D1 transaction integration", () => {
     expect(capturedSystemPrompt).toContain('"searched":true');
   });
 
+  it("resolves a short follow-up using the borrower's name from earlier conversation", async () => {
+    const borrowerId = crypto.randomUUID();
+    await db.prepare("INSERT INTO borrowers (id, full_name) VALUES (?, ?)")
+      .bind(borrowerId, "Juan Dela Cruz").run();
+
+    capturedSystemPrompt = "";
+    const response = await worker.fetch(new Request("https://integration.test/api/assistant", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        language: "tl-en",
+        messages: [
+          { role: "user", content: "Hanapin si Juan Dela Cruz" },
+          { role: "assistant", content: "May nahanap akong borrower na si Juan Dela Cruz." },
+          { role: "user", content: "Pakita mo yung record niya." }
+        ]
+      })
+    }), testEnv);
+
+    expect(response.status).toBe(200);
+    expect(capturedSystemPrompt).toContain("Juan Dela Cruz");
+    expect(capturedSystemPrompt).toContain(borrowerId);
+    expect(capturedSystemPrompt).toContain('"searched":true');
+  });
+
   it("applies the latest pending-action migration and updates active loan terms", async () => {
     const { loanId } = await seedBorrowerAndLoan();
     const { actionId } = await prepare("update_loan_terms", {
