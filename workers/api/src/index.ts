@@ -503,6 +503,20 @@ async function prepareAction(request: Request, env: Env): Promise<Response> {
   const action = validateAction(body.type, body.payload);
   if (!action) return json({ error: "Invalid action type or payload." }, 400);
 
+  // Prevent accidental duplicate borrower profiles before creating a pending action.
+  if (action.type === "create_borrower") {
+    const phone = action.payload.phone ?? null;
+    const existing = await env.DB.prepare(
+      "SELECT id, full_name, phone FROM borrowers WHERE archived_at IS NULL AND (lower(full_name) = lower(?) OR (? IS NOT NULL AND phone = ?)) ORDER BY full_name LIMIT 5"
+    ).bind(action.payload.fullName, phone, phone).all<{ id: string; full_name: string; phone: string | null }>();
+    if ((existing.results ?? []).length > 0) {
+      return json({
+        error: "A matching borrower already exists. Use the existing borrower record instead of creating a duplicate.",
+        matches: existing.results
+      }, 409);
+    }
+  }
+
   const id = crypto.randomUUID();
   await env.DB.prepare(
     "INSERT INTO pending_actions (id, action_type, payload_json, status, expires_at) VALUES (?, ?, ?, 'pending', datetime('now', '+15 minutes'))"
