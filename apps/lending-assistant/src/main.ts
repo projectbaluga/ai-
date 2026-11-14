@@ -182,23 +182,37 @@ function addMessage(role: "user" | "assistant", content: string) {
 
 function renderQuickReplies(message: string, list: HTMLElement) {
   const text = message.toLocaleLowerCase();
-  const recentLoan = state.messages.slice(-8).some(item => item.role === "user" &&
-    /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\b/i.test(item.content));
-  if (!recentLoan) return;
+  const recentUserMessages = state.messages.slice(-10).filter(item => item.role === "user");
+  const recentLoan = recentUserMessages.some(item =>
+    /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang|pinautang)\b/i.test(item.content));
+  const asksInterestType = /\b(one[- ]?time|monthly|monthly interest|one-time interest|paminsan|buwanan)\b/i.test(text) &&
+    /\b(interest|interes|tubo|rate|porsyento)\b/i.test(text);
+  const asksInterestExistence = /\b(interest[- ]?free|interest|interes|tubo)\b/i.test(text) &&
+    /\b(agreed|napagkasunduan|may|wala|none|free|ba po|ba\??)\b/i.test(text);
+  const asksConfirmation = /\b(should i|would you like|do you want|shall i|gusto (niyo|mo)|nais (niyo|mo)|proceed|continue|save (the )?(note|changes|update)|update the note|register|record the loan|magpatuloy|ituloy|i-save|isave|kumpirmahin|confirm)\b/i.test(text) &&
+    /\?|please confirm|approval required|pakireview|review.*before/i.test(text);
+  const asksCorrection = /\b(correct|change|revise|edit|baguhin|palitan|itama)\b/i.test(text) &&
+    /\b(detail|information|terms|amount|rate|pangalan|detalye)\b/i.test(text);
   let choices: string[] = [];
   let question = "";
-  if (/\b(one[- ]?time|monthly|interest|interes|tubo)\b/.test(text)) {
-    if (/one[- ]?time.{0,35}monthly|monthly.{0,35}one[- ]?time|paminsan|buwanan/.test(text)) {
-      question = "Paano napagkasunduan ang interest?";
-      choices = ["One-time interest", "Monthly interest"];
-    } else if (!/\b(rate|percent|percentage|porsyento)\b/.test(text)) {
-      question = "May napagkasunduang interest po ba?";
-      choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
-    }
-  } else if (/\b(pakiulit|repeat|could not|couldn't|hindi.*maihanda|action.*maayos|try again)\b/.test(text)) {
-    question = "Para maipagpatuloy ang loan, may napagkasunduang interest po ba?";
+
+  if (asksInterestType && /\bone[- ]?time.{0,45}(or|\/|versus|vs\.?).{0,45}monthly|monthly.{0,45}(or|\/|versus|vs\.?).{0,45}one[- ]?time|one[- ]?time.*monthly|monthly.*one[- ]?time|paminsan.*buwanan|buwanan.*paminsan/i.test(text)) {
+    question = "Piliin ang napagkasunduang interest:";
+    choices = ["One-time interest", "Monthly interest"];
+  } else if (asksInterestExistence && !/\b(one[- ]?time|monthly)\b/i.test(text)) {
+    question = "Ano ang napagkasunduan ninyo sa interest?";
+    choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
+  } else if (asksConfirmation) {
+    question = "Piliin ang gusto ninyong gawin:";
+    choices = ["Oo, magpatuloy", "Hindi muna", "Baguhin ang detalye"];
+  } else if (asksCorrection) {
+    question = "Ano ang gusto ninyong gawin?";
+    choices = ["Panatilihin ang detalye", "Baguhin ang detalye", "Kanselahin muna"];
+  } else if (recentLoan && /\b(pakiulit|repeat|could not|couldn't|hindi.*maihanda|action.*maayos|try again|please provide.*details)\b/i.test(text)) {
+    question = "Para maipagpatuloy ang loan, ano ang napagkasunduan sa interest?";
     choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
   }
+
   if (!choices.length) return;
   const wrap = document.createElement("div");
   wrap.className = "quick-replies";
@@ -224,6 +238,7 @@ function renderQuickReplies(message: string, list: HTMLElement) {
   }
   list.appendChild(wrap);
 }
+
 function renderContextPanel(query: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list || !state.connected) return;
