@@ -13,7 +13,7 @@ export interface Env {
   AI: WorkersAiBinding;
 }
 
-type ActionType = "create_borrower" | "create_loan" | "record_payment" | "update_borrower" | "archive_borrower" | "update_loan_terms";
+type ActionType = "create_borrower" | "create_loan" | "record_payment" | "update_borrower" | "archive_borrower" | "update_loan_terms" | "clear_all_records";
 type JsonObject = Record<string, unknown>;
 
 const json = (data: unknown, status = 200): Response =>
@@ -41,7 +41,7 @@ function normalizeActionPayload(type: unknown, input: unknown): { type: ActionTy
     record_payment: "record_payment", recordPayment: "record_payment",
     update_borrower: "update_borrower", updateBorrower: "update_borrower",
     archive_borrower: "archive_borrower", archiveBorrower: "archive_borrower",
-    update_loan_terms: "update_loan_terms", updateLoanTerms: "update_loan_terms"
+    update_loan_terms: "update_loan_terms", updateLoanTerms: "update_loan_terms",\n    clear_all_records: "clear_all_records", clearAllRecords: "clear_all_records", delete_all_records: "clear_all_records"
   };
   const canonicalType = typeof type === "string" ? aliases[type] : undefined;
   if (!canonicalType) return null;
@@ -61,7 +61,7 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
   type = normalized.type;
   const payload = normalized.payload;
 
-  if (type === "create_borrower") {
+  if (type === "clear_all_records") {\n    return Object.keys(payload).length === 0 ? { type, payload } : null;\n  }\n  if (type === "create_borrower") {
     if (!text(payload.fullName, 160)) return null;
     if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
@@ -683,6 +683,42 @@ export default {
 
     if (request.method === "POST" && url.pathname === "/api/assistant") {
       return assistantReply(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/admin/delete-all") {
+      const body = await readJson(request);
+      if (!isRecord(body) || !text(body.password, 512)) return json({ error: "Enter your owner password to continue." }, 400);
+      let rateLimit: { limited: boolean; retryAfter: number };
+      try { rateLimit = await loginRateLimitState(request, env.DB); }
+      catch { return json({ error: "Password protection is temporarily unavailable. Please try again." }, 503); }
+      if (rateLimit.limited) return new Response(JSON.stringify({ error: "Too many password attempts. Please wait before trying again." }), {
+        status: 429, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "retry-after": String(rateLimit.retryAfter), "x-content-type-options": "nosniff" }
+      });
+      const supplied = new TextEncoder().encode(body.password);
+      const expected = new TextEncoder().encode(env.OWNER_API_TOKEN);
+      let mismatch = supplied.length ^ expected.length;
+      for (let i = 0; i < Math.max(supplied.length, expected.length); i++) mismatch |= (supplied[i] ?? 0) ^ (expected[i] ?? 0);
+      if (mismatch !== 0) return json({ error: "Incorrect owner password. No records were deleted." }, 401);
+      try {
+        const [borrowers, loans, payments] = await Promise.all([
+          env.DB.prepare("SELECT COUNT(*) AS count FROM borrowers").first<{ count: number }>(),
+          env.DB.prepare("SELECT COUNT(*) AS count FROM loans").first<{ count: number }>(),
+          env.DB.prepare("SELECT COUNT(*) AS count FROM payments").first<{ count: number }>()
+        ]);
+        const counts = { borrowers: borrowers?.count ?? 0, loans: loans?.count ?? 0, payments: payments?.count ?? 0 };
+        await env.DB.batch([
+          env.DB.prepare("DELETE FROM payments"),
+          env.DB.prepare("DELETE FROM loans"),
+          env.DB.prepare("DELETE FROM borrowers"),
+          env.DB.prepare("DELETE FROM pending_actions"),
+          env.DB.prepare("INSERT INTO audit_log (id, actor, action, entity_type, entity_id, details_json) VALUES (?, 'owner', 'delete_all_records', 'workspace', 'all', ?)")
+            .bind(crypto.randomUUID(), JSON.stringify({ deleted: counts, auditHistoryRetained: true }))
+        ]);
+        await clearLoginRateLimit(request, env.DB);
+        return json({ status: "deleted", deleted: counts, auditHistoryRetained: true });
+      } catch {
+        return json({ error: "Bulk deletion failed. Check the records before trying again." }, 500);
+      }
     }
 
     if (request.method === "POST" && url.pathname === "/api/actions/prepare") {

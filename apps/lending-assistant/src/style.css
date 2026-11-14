@@ -26,3 +26,21 @@
 /* Context-driven record cards inside the AI conversation */
 .context-panel{width:min(100%,720px)}.context-panel-list{display:grid;gap:0}.context-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.context-row-copy{display:grid;gap:4px;min-width:0}.context-row-copy strong{font-size:12px;line-height:1.4;overflow-wrap:anywhere}.context-row-copy small{font-size:10px;line-height:1.5}.context-open{flex:0 0 auto;border:1px solid #e4e6f1;border-radius:9px;background:#fff;color:#5e57c9;font-size:10px;font-weight:700;padding:7px 12px}.context-open:active{transform:scale(.97)}.context-stat{align-items:flex-start}.context-empty{font-size:12px;color:#7f899d;margin:8px 0}.record-detail[data-record-id]{scroll-margin-top:90px}
 @media(max-width:700px){.context-panel{padding:13px}.context-row{gap:8px}.context-open{padding:7px 10px}}
+
+
+/* Re-authentication modal for destructive bulk deletion */
+.secure-modal-backdrop{position:fixed;inset:0;z-index:30;background:#18223580;display:grid;place-items:center;padding:18px}
+.secure-modal{position:relative;width:min(440px,100%);background:#fff;border:1px solid #e5e8ef;border-radius:20px;padding:27px;box-shadow:0 24px 80px #11182745}
+.secure-modal h2{font:800 22px Manrope;color:#202b40;margin:0 0 12px}
+.secure-modal-warning{background:#fff3f2;border:1px solid #f5d8d5;border-radius:11px;padding:12px;color:#a5444b;font-size:12px;line-height:1.55}
+.secure-modal-copy{font-size:12px;line-height:1.55;color:#788398;margin:14px 0}
+.secure-modal label{display:block;font-size:11px;font-weight:700;color:#4c5870;margin-bottom:7px}
+.secure-modal input{width:100%;border:1px solid #dfe4ed;border-radius:10px;padding:12px;font:13px 'DM Sans';outline:none}
+.secure-modal input:focus{border-color:#817be2;box-shadow:0 0 0 3px #625bd81a}
+.secure-modal-error{min-height:18px;color:#bd4e5b;font-size:11px;margin:8px 0}
+.secure-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.secure-modal-actions button,.secure-modal-close{border:0;border-radius:9px;padding:10px 12px;font-size:10px;font-weight:700}
+.secure-modal-cancel{background:#f0f2f6;color:#667187}
+.secure-modal-submit{background:#b54b55;color:white}
+.secure-modal-submit:disabled{opacity:.6}
+.secure-modal-close{position:absolute;right:13px;top:13px;background:transparent;color:#8992a4;font-size:22px;padding:2px 7px}

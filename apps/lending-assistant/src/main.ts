@@ -355,11 +355,107 @@ function renderContextPanel(query: string) {
   list.appendChild(card);
   list.scrollTop = list.scrollHeight;
 }
+function showDeleteAllPasswordModal(notice: HTMLElement) {
+  const existing = document.querySelector("#delete-all-modal");
+  existing?.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "delete-all-modal";
+  overlay.className = "secure-modal-backdrop";
+  overlay.innerHTML = `
+    <section class="secure-modal" role="dialog" aria-modal="true" aria-labelledby="delete-all-title">
+      <button type="button" class="secure-modal-close" aria-label="Close">×</button>
+      <p class="eyebrow">OWNER SECURITY CHECK</p>
+      <h2 id="delete-all-title">Delete all lending records?</h2>
+      <p class="secure-modal-warning">This permanently deletes all borrower, loan, payment, and pending-action records. This cannot be undone.</p>
+      <p class="secure-modal-copy">Your audit history will be retained. Enter your owner password to authorize this operation.</p>
+      <form id="delete-all-form">
+        <label for="delete-all-password">Owner password</label>
+        <input id="delete-all-password" type="password" autocomplete="current-password" required maxlength="512" placeholder="Enter owner password" />
+        <p class="secure-modal-error" id="delete-all-error" role="alert"></p>
+        <div class="secure-modal-actions">
+          <button type="button" class="secure-modal-cancel">Cancel</button>
+          <button type="submit" class="secure-modal-submit">Verify password and delete</button>
+        </div>
+      </form>
+    </section>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector(".secure-modal-close")?.addEventListener("click", close);
+  overlay.querySelector(".secure-modal-cancel")?.addEventListener("click", close);
+  overlay.addEventListener("click", event => { if (event.target === overlay) close(); });
+  const password = overlay.querySelector<HTMLInputElement>("#delete-all-password");
+  password?.focus();
+  overlay.querySelector<HTMLFormElement>("#delete-all-form")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = overlay.querySelector<HTMLButtonElement>(".secure-modal-submit");
+    const error = overlay.querySelector<HTMLElement>("#delete-all-error");
+    const secret = password?.value ?? "";
+    if (!secret || !button) return;
+    button.disabled = true;
+    button.textContent = "Verifying and deleting…";
+    if (error) error.textContent = "";
+    try {
+      const response = await fetch("/api/admin/delete-all", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ password: secret })
+      });
+      const result = await response.json() as { error?: string; status?: string; deleted?: { borrowers: number; loans: number; payments: number } };
+      if (!response.ok || result.status !== "deleted") throw new Error(result.error ?? "Deletion was not completed.");
+      password!.value = "";
+      close();
+      notice.textContent = "Deletion completed. " + result.deleted!.borrowers + " borrower(s), " + result.deleted!.loans + " loan(s), and " + result.deleted!.payments + " payment(s) deleted. Audit history retained.";
+      await loadData();
+      addMessage("assistant", "Na-delete ang lending records matapos ma-verify ang owner password. Napanatili ang audit history.");
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Incorrect owner password")) {
+        if (error) { /* keep the modal open for another attempt */ }
+      }
+      if (error) {
+        const message = error instanceof Error ? error.message : "Deletion failed. No success was reported.";
+        if (message.includes("Incorrect owner password")) {
+          if (password) password.value = "";
+          if (error) error.textContent = message;
+        } else if (error instanceof Error && error.message) {
+          if (error) error.textContent = message;
+        }
+      }
+      button.disabled = false;
+      button.textContent = "Verify password and delete";
+      password?.focus();
+    }
+  });
+}
+
 function renderProposal(proposal: AssistantProposal) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list) return;
   const card = document.createElement("section");
   card.className = "proposal-card";
+  if (proposal.type === "clear_all_records") {
+    const heading = document.createElement("strong");
+    heading.textContent = "Destructive action · owner password required";
+    const summary = document.createElement("p");
+    summary.textContent = proposal.summary;
+    const warning = document.createElement("p");
+    warning.className = "proposal-notice";
+    warning.textContent = "Deletes all borrowers, loans, payments, and pending actions. Audit history is retained.";
+    const authorize = document.createElement("button");
+    authorize.className = "proposal-button";
+    authorize.textContent = "Continue to password check";
+    authorize.addEventListener("click", () => {
+      authorize.disabled = true;
+      showDeleteAllPasswordModal(warning);
+    });
+    card.appendChild(heading);
+    card.appendChild(summary);
+    card.appendChild(warning);
+    card.appendChild(authorize);
+    list.appendChild(card);
+    list.scrollTop = list.scrollHeight;
+    return;
+  }
   const heading = document.createElement("strong");
   heading.textContent = "Proposed action · approval required";
   const summary = document.createElement("p");
