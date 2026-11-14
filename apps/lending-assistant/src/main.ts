@@ -14,7 +14,7 @@ const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("App root not found");
 
 const state = {
-  page: "home",
+  page: "assistant",
   borrowers: [] as Borrower[],
   loans: [] as Loan[],
   payments: [] as Payment[],
@@ -38,7 +38,7 @@ function shell() {
       <aside class="sidebar">
         <a class="brand" href="#" aria-label="AI Workspace home"><span class="brand-mark">A</span><span>AI Workspace<small>LENDING ASSISTANT</small></span></a>
         <nav class="side-nav" aria-label="Main navigation">
-          <button data-page="home" class="nav-item active"><span>⌂</span> Overview</button>
+          <button data-page="assistant" class="nav-item active"><span>✦</span> Ask AI</button><button data-page="home" class="nav-item"><span>⌂</span> Overview</button>
           <button data-page="borrowers" class="nav-item"><span>♙</span> Borrowers</button>
           <button data-page="loans" class="nav-item"><span>▤</span> Loans</button>
           <button data-page="activity" class="nav-item"><span>↻</span> Activity</button>
@@ -65,8 +65,19 @@ function renderPage() {
   const target = document.querySelector<HTMLElement>("#page-content");
   const label = document.querySelector<HTMLElement>("#page-label");
   if (!target || !label) return;
-  const titles: Record<string, string> = { home: "Overview", borrowers: "Borrowers", loans: "Loans", activity: "Activity", reports: "Reports" };
+  const titles: Record<string, string> = { assistant: "Ask AI", home: "Overview", borrowers: "Borrowers", loans: "Loans", activity: "Activity", reports: "Reports" };
   label.textContent = titles[state.page] ?? "Overview";
+  const assistantPanel = document.querySelector<HTMLElement>("#assistant-panel");
+  const assistantFab = document.querySelector<HTMLElement>("#assistant-open");
+  const isAssistantHome = state.page === "assistant";
+  if (assistantPanel) { assistantPanel.hidden = !isAssistantHome; assistantPanel.classList.toggle("ai-first", isAssistantHome); }
+  if (assistantFab) (assistantFab as HTMLElement).hidden = isAssistantHome;
+  target.classList.toggle("assistant-home", isAssistantHome);
+  if (isAssistantHome) {
+    target.innerHTML = `<div class="ai-home-intro"><p class="eyebrow">YOUR AI LENDING WORKSPACE</p><h1>What would you like to do?</h1><p class="muted">Magtanong, maghanap ng records, mag-review ng payments, o maghanda ng transaction. You can speak or type naturally.</p><div class="ai-suggestions"><button data-prompt="Show my lending overview">Show lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Show recent payments">Recent payments</button><button data-prompt="Show my active loans">Active loans</button></div></div>`;
+    target.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach(b => b.addEventListener("click", () => { const input = document.querySelector<HTMLTextAreaElement>("#chat-input"); if (input) { input.value = b.dataset.prompt ?? ""; input.focus(); } }));
+    return;
+  }
   document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === state.page));
 
   if (state.page === "home") {
@@ -151,7 +162,7 @@ function bindShell() {
   document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach(b => b.addEventListener("click", () => { const input = document.querySelector<HTMLTextAreaElement>("#chat-input"); if (input) { input.value = b.dataset.prompt ?? ""; input.focus(); } }));
 }
 
-function openAssistant() { document.querySelector<HTMLElement>("#assistant-panel")!.hidden = false; document.querySelector<HTMLTextAreaElement>("#chat-input")?.focus(); }
+function openAssistant() { state.page = "assistant"; renderPage(); document.querySelector<HTMLTextAreaElement>("#chat-input")?.focus(); }
 function closeAssistant() { document.querySelector<HTMLElement>("#assistant-panel")!.hidden = true; }
 
 function addMessage(role: "user" | "assistant", content: string) {
@@ -172,6 +183,64 @@ function addMessage(role: "user" | "assistant", content: string) {
   list.scrollTop = list.scrollHeight;
 }
 
+
+function renderContextPanel(query: string) {
+  const list = document.querySelector<HTMLElement>("#chat-messages");
+  if (!list || !state.connected) return;
+  const q = query.toLocaleLowerCase();
+  let title = "";
+  let rows: Array<{ title: string; detail: string }> = [];
+  if (/borrower|utang|nangutang|customer|tao|pangalan/.test(q)) {
+    const matches = state.borrowers.filter(b => !q.replace(/borrower|utang|nangutang|customer|tao|pangalan|sino|hanap|find|show|list|lahat|all|details|detail|ni|si|ang|the|for|about/g, " ").trim() || b.full_name.toLocaleLowerCase().split(/\\s+/).some(part => q.includes(part)));
+    title = "Borrower records";
+    rows = matches.slice(0, 12).map(b => ({ title: b.full_name, detail: [b.phone || "No phone recorded", state.loans.filter(l => l.borrower_id === b.id).length + " linked loan(s)"].join(" · ") }));
+  } else if (/loan|utang|pautang/.test(q)) {
+    title = "Loan records";
+    rows = state.loans.slice(0, 12).map(l => ({ title: peso(l.principal_minor) + " · " + l.status, detail: state.borrowers.find(b => b.id === l.borrower_id)?.full_name ?? "Borrower unavailable" }));
+  } else if (/payment|bayad|hulog|nabayad/.test(q)) {
+    title = "Recorded payments";
+    rows = state.payments.slice(0, 12).map(p => ({ title: peso(p.amount_minor), detail: new Date(p.paid_at).toLocaleString("en-PH") + " · " + (state.loans.find(l => l.id === p.loan_id)?.id.slice(0, 8) ?? "Loan unavailable") }));
+  } else if (/activity|history|kasaysayan|recent|recently/.test(q)) {
+    title = "Recent confirmed activity";
+    rows = state.activity.slice(0, 12).map(a => ({ title: a.action.replaceAll("_", " "), detail: a.entity_type + " · " + new Date(a.created_at).toLocaleString("en-PH") }));
+  } else if (/overview|dashboard|summary|kabuuan/.test(q)) {
+    title = "Verified workspace snapshot";
+    rows = [
+      { title: state.borrowers.length + " borrower record(s)", detail: "Stored borrower records" },
+      { title: state.loans.length + " loan record(s)", detail: "Stored loan records; no balance inferred" },
+      { title: state.payments.length + " payment record(s)", detail: "Recorded payment entries" },
+      { title: state.activity.length + " activity record(s)", detail: "Confirmed audit entries" }
+    ];
+  }
+  if (!title) return;
+  const card = document.createElement("section");
+  card.className = "context-panel";
+  const heading = document.createElement("h4");
+  heading.textContent = title;
+  card.appendChild(heading);
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "No matching verified records were found.";
+    card.appendChild(empty);
+  } else {
+    rows.forEach(row => {
+      const item = document.createElement("div");
+      item.className = "context-row";
+      const strong = document.createElement("strong");
+      strong.textContent = row.title;
+      const small = document.createElement("small");
+      small.textContent = row.detail;
+      item.append(strong, small);
+      card.appendChild(item);
+    });
+  }
+  const note = document.createElement("p");
+  note.className = "context-note";
+  note.textContent = "Context from stored records only. Outstanding balances, accrued interest, and payment allocation are not calculated here.";
+  card.appendChild(note);
+  list.appendChild(card);
+  list.scrollTop = list.scrollHeight;
+}
 
 function renderProposal(proposal: AssistantProposal) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
@@ -259,6 +328,7 @@ async function sendMessage(event: SubmitEvent) {
     const data = await response.json() as AssistantReply & { error?: string };
     if (!response.ok) throw new Error(data.error ?? "Assistant request failed.");
     addMessage("assistant", data.message);
+    renderContextPanel(content);
     if (data.proposedActions?.length) data.proposedActions.forEach(renderProposal);
   } catch (error) {
     addMessage("assistant", error instanceof Error ? error.message : "Hindi muna available ang assistant. Walang na-save na transaction.");
