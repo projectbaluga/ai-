@@ -180,6 +180,7 @@ function renderContextPanel(query: string) {
   if (!list || !state.connected) return;
   const q = query.toLocaleLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
   const has = (...terms: string[]) => terms.some(term => q.includes(term));
+  const nameMatches = (name: string) => { const normalized = name.toLocaleLowerCase(); const words = normalized.split(/\\s+/); return q.includes(normalized) || words.some(word => word.length > 2 && q.split(/\\s+/).includes(word)); };
   const card = document.createElement("section");
   card.className = "context-panel";
   const heading = document.createElement("h4");
@@ -224,7 +225,7 @@ function renderContextPanel(query: string) {
   }
   if (kind === "borrowers") {
     heading.textContent = "Borrower records";
-    const namedMatches = state.borrowers.filter(b => q.includes(b.full_name.toLocaleLowerCase()));
+    const namedMatches = state.borrowers.filter(b => nameMatches(b.full_name));
     const generic = has("lahat", "all", "list", "show", "find") && !namedMatches.length;
     const matches = namedMatches.length ? namedMatches : generic || has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") ? state.borrowers : [];
     matches.slice(0, 12).forEach(b => {
@@ -233,19 +234,20 @@ function renderContextPanel(query: string) {
     });
   } else if (kind === "loans") {
     heading.textContent = "Loan records";
-    const namedBorrowers = state.borrowers.filter(b => q.includes(b.full_name.toLocaleLowerCase()));
+    const namedBorrowers = state.borrowers.filter(b => nameMatches(b.full_name));
     const generic = !namedBorrowers.length && (has("lahat", "all", "list", "show", "active") || has("loan", "loans", "pautang", "utang record"));
-    const matches = state.loans.filter(l => generic || namedBorrowers.some(b => b.id === l.borrower_id));
+    const matches = state.loans.filter(l => (generic || namedBorrowers.some(b => b.id === l.borrower_id)) && (!has("active", "aktibo") || l.status === "active"));
     matches.slice(0, 12).forEach(l => {
       const borrower = state.borrowers.find(b => b.id === l.borrower_id);
       addRow(peso(l.principal_minor) + " · " + l.status, (borrower?.full_name ?? "Borrower unavailable") + " · " + l.interest_type + " interest", "loans", l.id, "loan");
     });
   } else if (kind === "payments") {
     heading.textContent = "Recorded payment entries";
+    const namedBorrowers = state.borrowers.filter(b => nameMatches(b.full_name));
     const matches = state.payments.filter(p => {
       const loan = state.loans.find(l => l.id === p.loan_id);
       const borrower = loan && state.borrowers.find(b => b.id === loan.borrower_id);
-      return !borrower || !q.match(/[a-z]{2,}/) || q.split(/\\s+/).some(word => word.length > 2 && borrower.full_name.toLocaleLowerCase().includes(word));
+      return !namedBorrowers.length || !!borrower && namedBorrowers.some(b => b.id === borrower.id);
     });
     matches.slice(0, 12).forEach(p => {
       const loan = state.loans.find(l => l.id === p.loan_id);
