@@ -4,10 +4,15 @@ import worker from "../workers/api/src/index";
 
 const db = (env as unknown as { DB: D1Database }).DB;
 
+let capturedSystemPrompt = "";
 const testEnv = {
   DB: db,
   OWNER_API_TOKEN: "d1-integration-test-secret",
-  AI: { run: async () => ({ response: "{}" }) }
+  AI: { run: async (_model: string, input: Record<string, unknown>) => {
+    const messages = input.messages as Array<{ role: string; content: string }>;
+    capturedSystemPrompt = messages.find(message => message.role === "system")?.content ?? "";
+    return { response: JSON.stringify({ intent: "search_records", message: "Nahanap ko ang record.", proposedActions: [], needsClarification: false }) };
+  } }
 };
 
 const headers = {
@@ -120,6 +125,28 @@ describe("Worker D1 transaction integration", () => {
       .first<{ count: number }>();
     expect(payment).toEqual({ loan_id: loanId, amount_minor: 2500 });
     expect(audit?.count).toBe(1);
+  });
+
+  it("finds a borrower outside the first 30 records for AI context", async () => {
+    for (let index = 0; index < 35; index++) {
+      await db.prepare("INSERT INTO borrowers (id, full_name) VALUES (?, ?)")
+        .bind(crypto.randomUUID(), `Aardvark Borrower ${String(index).padStart(2, "0")}`).run();
+    }
+    const olderId = crypto.randomUUID();
+    await db.prepare("INSERT INTO borrowers (id, full_name) VALUES (?, ?)")
+      .bind(olderId, "Zelda Older Borrower").run();
+
+    capturedSystemPrompt = "";
+    const response = await worker.fetch(new Request("https://integration.test/api/assistant", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ language: "en", messages: [{ role: "user", content: "Find Zelda Older" }] })
+    }), testEnv);
+
+    expect(response.status).toBe(200);
+    expect(capturedSystemPrompt).toContain("Zelda Older Borrower");
+    expect(capturedSystemPrompt).toContain(olderId);
+    expect(capturedSystemPrompt).toContain('"searched":true');
   });
 
   it("applies the latest pending-action migration and updates active loan terms", async () => {
