@@ -460,7 +460,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     }
   }
   const systemPrompt = buildLendingAssistantSystemPrompt({ language, recordContext, targetedMatches }) +
-    "\\n\\nTRANSACTION CONVERSATION STATE: " + JSON.stringify({
+    "\n\nTRANSACTION CONVERSATION STATE: " + JSON.stringify({
       status: transactionState.status,
       carriesTransactionContext: transactionState.carriesTransactionContext,
       instruction: transactionState.instruction
