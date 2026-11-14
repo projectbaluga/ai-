@@ -279,7 +279,35 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("NO REPEATED QUESTIONS");
     expect(systemPrompt).toContain("FINANCIAL CARE");
     expect(systemPrompt).toContain("ERROR RECOVERY");
-    expect(systemPrompt).toContain("2026-11-14.7");
+    expect(systemPrompt).toContain("MULTI-TURN TRANSACTION STATE");
+    expect(systemPrompt).toContain("2026-11-14.8");
+  });
+
+  it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
+    const clarification = {
+      intent: "request_clarification",
+      message: "Nakuha ko po: ₱1,000 kay Jeffrey Peconcillo at 5% fixed. May iba pa bang napagkasunduang term na kailangan kong malaman?",
+      proposedActions: [],
+      needsClarification: true
+    };
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "I can prepare that loan now." }))
+      .mockImplementationOnce(async () => ({ response: JSON.stringify(clarification) }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [
+        { role: "user", content: "I lent Jeffrey Peconcillo 1000 pesos." },
+        { role: "assistant", content: "What interest terms did you agree on?" },
+        { role: "user", content: "5% fixed." }
+      ] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "request_clarification",
+      proposedActions: [],
+      needsClarification: true
+    });
+    expect(env.AI.run).toHaveBeenCalledTimes(2);
   });
 
   it("answers loan-process how-to questions naturally without treating them as write requests", async () => {
