@@ -15,7 +15,7 @@ const env = {
   DB: mockDb as unknown as D1Database,
   OWNER_API_TOKEN: "test-secret",
   AI: {
-    run: vi.fn(async () => ({
+    run: vi.fn(async (): Promise<unknown> => ({
       response: JSON.stringify({
         intent: "request_clarification",
         message: "Magkano po ang ipapautang?",
@@ -155,6 +155,55 @@ describe("API worker", () => {
     expect(env.AI.run).not.toHaveBeenCalled();
   });
 
+  it("parses fenced JSON with a short preamble", async () => {
+    const payload = { intent: "answer_question", message: "Kumusta po!", proposedActions: [], needsClarification: false };
+    env.AI.run.mockImplementationOnce(async () => ({ response: "Narito ang sagot:\n```json\n" + JSON.stringify(payload) + "\n```" }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello?" }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(payload);
+  });
+
+  it("accepts nested Workers AI response wrappers", async () => {
+    const payload = { intent: "answer_question", message: "Hello!", proposedActions: [], needsClarification: false };
+    env.AI.run.mockImplementationOnce(async () => ({ result: { response: JSON.stringify(payload) } }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello?" }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(payload);
+  });
+
+  it("returns a traceable 502 for malformed model output without logging user content", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    env.AI.run.mockImplementationOnce(async () => ({ response: "not valid JSON" }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "private test message" }] })
+    }), env);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("unsupported format"), requestId: expect.any(String) });
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(String(errorSpy.mock.calls[0][1])).not.toContain("private test message");
+    errorSpy.mockRestore();
+  });
+
+  it("returns a traceable 503 when the Workers AI request throws", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    env.AI.run.mockImplementationOnce(async () => { throw new Error("provider unavailable"); });
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "hello?" }] })
+    }), env);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ requestId: expect.any(String) });
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(String(errorSpy.mock.calls[0][1])).not.toContain("provider unavailable");
+    errorSpy.mockRestore();
+  });
   it("returns a structured Tagalog assistant response without committing actions", async () => {
     env.AI.run.mockClear();
     const request = new Request("https://example.test/api/assistant", {
