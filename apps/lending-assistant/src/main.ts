@@ -53,8 +53,8 @@ function shell() {
       </main>
       <button class="assistant-fab" id="assistant-open" aria-label="Open AI assistant"><span>✦</span><b>Ask AI</b></button>
       <section class="assistant-panel" id="assistant-panel" aria-label="AI Lending Assistant" hidden>
-        <header class="assistant-head"><div class="ai-avatar">✦</div><div><strong>AI Lending Assistant</strong><small id="assistant-status">Ready to help · English / Tagalog</small></div><button class="icon-btn" id="assistant-close" aria-label="Close assistant">×</button></header>
-        <div class="chat-messages" id="chat-messages"><div class="welcome-message"><span class="welcome-spark">✦</span><h3>Kumusta! How can I help?</h3><p>Ask about your lending records, borrowers, or payments. I’ll use verified records when the secure connection is ready.</p><div class="prompt-chips"><button data-prompt="Show my lending overview">Lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Summarize recent payments">Recent payments</button></div></div></div>
+        <header class="assistant-head"><div class="ai-avatar">✦</div><div><strong>AI Lending Assistant</strong><small id="assistant-status" aria-live="polite">Ready to help · English / Tagalog</small></div><button class="icon-btn" id="assistant-close" aria-label="Close assistant">×</button></header>
+        <div class="chat-messages" id="chat-messages" aria-live="polite" aria-relevant="additions text"><div class="welcome-message"><span class="welcome-spark">✦</span><h3>Kumusta! How can I help?</h3><p>Ask about your lending records, borrowers, or payments. I’ll use verified records when the secure connection is ready.</p><div class="prompt-chips"><button data-prompt="Show my lending overview">Lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Summarize recent payments">Recent payments</button></div></div></div>
         <form class="chat-form" id="chat-form"><textarea id="chat-input" rows="1" placeholder="Type in English, Tagalog, or Taglish…" aria-label="Message the AI assistant"></textarea><div class="chat-actions"><button type="button" class="voice-btn" id="voice-btn" aria-label="Speak a message">♩ <span>Voice</span></button><span class="chat-hint">AI suggestions need your approval</span><button class="send-btn" type="submit" aria-label="Send message">↑</button></div></form>
       </section>
     </div>`;
@@ -547,7 +547,7 @@ function renderProposal(proposal: AssistantProposal) {
   }
   const prepare = document.createElement("button");
   prepare.className = "proposal-button";
-  prepare.textContent = proposal.type === "create_loan" ? "I-save ang loan na ito" : "Review transaction details";
+  prepare.textContent = proposal.type === "create_loan" ? "Review loan details" : "Review transaction details";
   prepare.addEventListener("click", async () => {
     if (state.actionBusy || state.busy) return;
     state.actionBusy = true;
@@ -563,10 +563,10 @@ function renderProposal(proposal: AssistantProposal) {
       if (!response.ok || !data.actionId) throw new Error(data.error ?? "Could not prepare this action.");
       const notice = document.createElement("p");
       notice.className = "proposal-notice";
-      notice.textContent = "Hindi pa ito nase-save. Pindutin ang button sa ibaba kung tama na ang lahat.";
+      notice.textContent = "Hindi pa ito nase-save. Suriin ang detalye, pagkatapos ay piliin ang Kumpirmahin at i-save kung tama na.";
       const confirm = document.createElement("button");
       confirm.className = "proposal-confirm";
-      confirm.textContent = proposal.type === "create_loan" ? "I-save ang loan" : "Kumpirmahin at i-save";
+      confirm.textContent = "Kumpirmahin at i-save";
       confirm.addEventListener("click", async () => {
         if (state.actionBusy || state.busy) return;
         state.actionBusy = true;
@@ -623,9 +623,7 @@ function renderProposal(proposal: AssistantProposal) {
       card.appendChild(cancel);
       state.pendingReviews.push({ actionId: data.actionId, notice, confirm, cancel });
       state.actionBusy = false;
-      // One tap on the clearly labelled save button is the owner's approval:
-      // prepare the protected action and confirm it immediately.
-      if (proposal.type === "create_loan") confirm.click();
+      // Preparing a review is not approval. Require a separate, explicit owner action to commit.
     } catch (error) {
       prepare.disabled = false;
       prepare.textContent = error instanceof Error ? error.message : "Try again";
