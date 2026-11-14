@@ -463,6 +463,8 @@ function renderProposal(proposal: AssistantProposal) {
   prepare.className = "proposal-button";
   prepare.textContent = "Review transaction details";
   prepare.addEventListener("click", async () => {
+    if (state.actionBusy || state.busy) return;
+    state.actionBusy = true;
     prepare.disabled = true;
     prepare.textContent = "Preparing…";
     try {
@@ -532,9 +534,11 @@ function renderProposal(proposal: AssistantProposal) {
       card.appendChild(confirm);
       card.appendChild(cancel);
       state.pendingReviews.push({ actionId: data.actionId, notice, confirm, cancel });
+      state.actionBusy = false;
     } catch (error) {
       prepare.disabled = false;
       prepare.textContent = error instanceof Error ? error.message : "Try again";
+      state.actionBusy = false;
     }
   });
   card.appendChild(heading);
