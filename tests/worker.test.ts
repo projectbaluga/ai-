@@ -262,6 +262,26 @@ describe("API worker", () => {
     expect(env.AI.run).toHaveBeenCalledOnce();
   });
 
+  it("supplies the model with the natural-conversation playbook", async () => {
+    let systemPrompt = "";
+    env.AI.run.mockImplementationOnce(async (_model, input) => {
+      const messages = input.messages as Array<{ role: string; content: string }>;
+      systemPrompt = messages.find(message => message.role === "system")?.content ?? "";
+      return { response: "Sige po, tutulungan kita." };
+    });
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ language: "tl-en", messages: [{ role: "user", content: "Pwede ba tayo mag-usap?" }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(systemPrompt).toContain("NATURAL HUMAN CONVERSATION");
+    expect(systemPrompt).toContain("CONTEXT THREADING");
+    expect(systemPrompt).toContain("NO REPEATED QUESTIONS");
+    expect(systemPrompt).toContain("FINANCIAL CARE");
+    expect(systemPrompt).toContain("ERROR RECOVERY");
+    expect(systemPrompt).toContain("2026-11-14.7");
+  });
+
   it("answers loan-process how-to questions naturally without treating them as write requests", async () => {
     const reply = "Para mag-process ng loan: piliin muna ang borrower, ilagay ang principal at napagkasunduang interest terms, i-review ang due dates, at kumpirmahin bago i-save.";
     env.AI.run.mockImplementationOnce(async () => ({ response: reply }));
