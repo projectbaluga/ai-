@@ -92,7 +92,7 @@ All require owner authentication. These endpoints return stored records and do n
 
 `POST /api/assistant` requires owner authentication and accepts 1–20 conversation messages (each up to 4,000 characters, with a combined limit of 12,000 characters). Optional `language` may be `en`, `tl`, or `tl-en`.
 
-The response contains `intent`, `message`, `proposedActions`, and `needsClarification`. Every proposal must include `requiresConfirmation: true`. The AI endpoint does not write to D1. Model output is untrusted and must pass through the normal prepare/confirm flow. The frontend now presents proposal details and requires a separate owner confirmation before saving.
+The response contains `intent`, `message`, `proposedActions`, and `needsClarification`. Every proposal must include `requiresConfirmation: true`. The AI endpoint does not write to D1. Model output is untrusted and must pass through the normal prepare/confirm flow. The frontend now presents proposal details and requires a separate owner confirmation before saving. For each user message, the Worker also extracts up to five specific name/identifier terms and runs parameterized, read-only targeted searches across the full borrower, loan, and payment tables (up to 10 matches per category). This supplements the limited general context so older records can be found; partial matches still need owner verification before any proposed change.
 
 The Worker uses the Cloudflare Workers AI binding and `@cf/meta/llama-3.1-8b-instruct`. If AI is unavailable or returns invalid output, the endpoint returns an error; regular app controls remain the fallback.
 
@@ -103,7 +103,7 @@ The Pages project uses a Pages Function at `/api/*` to forward same-origin reque
 
 ## Database integration tests
 
-The test suite uses Cloudflare's Workers Vitest integration and an isolated local D1 database. It applies every SQL migration in `database/migrations` before the D1 integration tests. The integration coverage exercises confirmed borrower creation, duplicate concurrent confirmation, rollback when the audit insert fails, payment recording, and the latest loan-terms migration. These tests run locally in Miniflare through GitHub Actions; they do not connect to or modify a production Cloudflare D1 database.
+The test suite uses Cloudflare's Workers Vitest integration and an isolated local D1 database. It applies every SQL migration in `database/migrations` before the D1 integration tests. The integration coverage exercises confirmed borrower creation, duplicate concurrent confirmation, rollback when the audit insert fails, payment recording, the latest loan-terms migration, and AI targeted search for a borrower outside the initial 30-record context sample. These tests run locally in Miniflare through GitHub Actions; they do not connect to or modify a production Cloudflare D1 database.
 
 ## Current implementation boundaries
 
