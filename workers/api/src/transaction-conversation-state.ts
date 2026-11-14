@@ -15,7 +15,7 @@ export interface TransactionConversationState {
   instruction: string;
 }
 
-const LOAN_EVENT = /\b(?:nagpautang|magpautang|pinahiram|nangutang|umutang|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i;
+const LOAN_EVENT = /\b(?:nagpautang|magpautang|pinautang|pinahiram|nangutang|umutang|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i;
 const TRANSACTION_DETAIL_QUESTION = /\b(?:interest|loan terms|interest type|interest value|interest period|principal|amount|halaga|magkano|borrower|pangalan|name|phone|contact|due date|due|date|kailan|bayad|hulog|repayment|frequency|tubo|patong|porsiyento|ilang)\b/i;
 
 export function isExplicitTransactionCancellation(message: string): boolean {

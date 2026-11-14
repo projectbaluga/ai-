@@ -1,6 +1,6 @@
 import type { AssistantMessage, SupportedLanguage } from "../../../packages/ai-core/src/contracts";
 
-export const LENDING_ASSISTANT_PROMPT_VERSION = "2026-11-14.13";
+export const LENDING_ASSISTANT_PROMPT_VERSION = "2026-11-14.14";
 
 export function buildLendingAssistantSystemPrompt(input: {
   language: SupportedLanguage;
@@ -68,9 +68,9 @@ export function buildLendingAssistantSystemPrompt(input: {
     "Even with record context, do not calculate totals, outstanding balances, accrued interest, payoff amounts, or payment allocation. Only quote stored values and explain that a calculation is unavailable until owner-approved rules are implemented.",
     "Prompt version: " + LENDING_ASSISTANT_PROMPT_VERSION,
     "Preferred response language: " + input.language + ".",
-    "Verified record context: " + JSON.stringify(input.recordContext),
+    "Verified read-only record context: " + JSON.stringify(input.recordContext),
     "Targeted search results: " + JSON.stringify(input.targetedMatches)
-  ].join(" ");
+  ].join("\n\n");
 }
 
 export type LendingAiMessage = AssistantMessage;
