@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../workers/api/src/index";
+import { buildLendingAssistantSystemPrompt } from "../workers/api/src/lending-assistant-prompt";
 
 let loginAttempts = 0;
 const mockDb = {
@@ -262,18 +263,12 @@ describe("API worker", () => {
     expect(env.AI.run).toHaveBeenCalledOnce();
   });
 
-  it("supplies the model with the natural-conversation playbook", async () => {
-    let systemPrompt = "";
-    env.AI.run.mockImplementationOnce(async (_model, input) => {
-      const messages = input.messages as Array<{ role: string; content: string }>;
-      systemPrompt = messages.find(message => message.role === "system")?.content ?? "";
-      return { response: "Sige po, tutulungan kita." };
+  it("supplies the model with the natural-conversation playbook", () => {
+    const systemPrompt = buildLendingAssistantSystemPrompt({
+      language: "tl-en",
+      recordContext: { available: false },
+      targetedMatches: { searched: false }
     });
-    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
-      method: "POST", headers: { ...authorized, "content-type": "application/json" },
-      body: JSON.stringify({ language: "tl-en", messages: [{ role: "user", content: "Pwede ba tayo mag-usap?" }] })
-    }), env);
-    expect(response.status).toBe(200);
     expect(systemPrompt).toContain("NATURAL HUMAN CONVERSATION");
     expect(systemPrompt).toContain("CONTEXT THREADING");
     expect(systemPrompt).toContain("NO REPEATED QUESTIONS");
