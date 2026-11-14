@@ -459,7 +459,7 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
     return name.length > 0 && (" " + normalizedText + " ").includes(" " + name + " ");
   });
   if (matches.length > 1) return null;
-  const nameMatch = userText.match(/\bkay[ \t]+([\p{L}][\p{L}'’-]*(?:[ \t]+[\p{L}][\p{L}'’-]*){1,3})/iu);
+  const nameMatch = userText.match(/\b(?:kay|si|ni)[ \t]+([\p{L}][\p{L}'’-]*(?:[ \t]+(?!ng\b|nang\b|na\b|ngayon\b|today\b|kahapon\b|yesterday\b|bukas\b|tomorrow\b)[\p{L}][\p{L}'’-]*){0,2})/iu);
   const borrowerName = matches.length === 1 ? matches[0].full_name : nameMatch?.[1]
     ?.replace(/\s+(?:ngayon|today|kahapon|yesterday|bukas|tomorrow)$/i, "").trim();
   if (!borrowerName) return null;
