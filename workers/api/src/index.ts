@@ -269,11 +269,23 @@ export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
 
 function modelOutputDiagnostics(raw: unknown): JsonObject {
   const outer = isRecord(raw) ? raw : null;
+  const choices = outer?.choices;
+  const firstChoice = Array.isArray(choices) ? choices[0] : null;
+  const message = isRecord(firstChoice) ? firstChoice.message : null;
+  const messageContent = isRecord(message) ? message.content : null;
   const candidate = unwrapModelContent(raw);
   const content = modelContentText(candidate);
   return {
     outputType: Array.isArray(raw) ? "array" : typeof raw,
     outputKeys: outer ? Object.keys(outer).slice(0, 12) : [],
+    choicesType: Array.isArray(choices) ? "array" : typeof choices,
+    choicesLength: Array.isArray(choices) ? choices.length : null,
+    firstChoiceType: Array.isArray(choices) ? (isRecord(firstChoice) ? "object" : typeof firstChoice) : null,
+    firstChoiceKeys: isRecord(firstChoice) ? Object.keys(firstChoice).slice(0, 12) : [],
+    messageType: message === null ? "null" : Array.isArray(message) ? "array" : typeof message,
+    messageKeys: isRecord(message) ? Object.keys(message).slice(0, 12) : [],
+    messageContentType: messageContent === null ? "null" : Array.isArray(messageContent) ? "array" : typeof messageContent,
+    messageContentLength: typeof messageContent === "string" ? messageContent.length : null,
     candidateType: content !== null ? "string" : Array.isArray(candidate) ? "array" : typeof candidate,
     candidateLength: content !== null ? content.length : null
   };
