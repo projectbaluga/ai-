@@ -297,7 +297,14 @@ function modelTextOutput(raw: unknown): string | null {
 }
 
 function isPotentialWriteRequest(message: string): boolean {
-  return /\b(pautang|magpautang|nagpautang|utang|lend|lending|loan|bayad|magbayad|nagbayad|payment|record(?:ing)?|paki\s+lista|add\s+(?:a\s+)?borrower|create\s+(?:a\s+)?borrower|update\s+(?:a\s+)?borrower|archive\s+(?:a\s+)?borrower|change\s+(?:the\s+)?interest)\b/i.test(message);
+  const normalized = message.trim();
+  // Questions and how-to requests are conversation, even when they mention
+  // loan, utang, payment, or lending terminology.
+  if (/\b(paano|how\s+(?:do\s+i|to|can\s+i)|what\s+is|what\s+are|why|when|where|explain|ipaliwanag|ano\s+ang)\b/i.test(normalized)) {
+    return false;
+  }
+  // Only explicit record-changing language should require a structured action.
+  return /\b(?:paki\s*(?:lista|record|save|add|create|update|archive)|(?:nagpautang|magpautang)\s+ako|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i.test(normalized);
 }
 
 
