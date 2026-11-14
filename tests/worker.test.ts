@@ -413,7 +413,7 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("TRANSACTION LIFECYCLE");
     expect(systemPrompt).toContain("REASONING DISCIPLINE");
     expect(systemPrompt).toContain("Use the required JSON object only");
-    expect(systemPrompt).toContain("2026-11-14.14");
+    expect(systemPrompt).toContain("2026-11-14.15");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
