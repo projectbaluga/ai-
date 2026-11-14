@@ -4,6 +4,7 @@ import { borrowerFormMarkup, loanFormMarkup, paymentFormMarkup, bindRecordForms 
 type Borrower = { id: string; full_name: string; phone?: string | null };
 type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string };
 type Payment = { id: string; loan_id: string; amount_minor: number; paid_at: string };
+type AuditEntry = { id: string; action: string; entity_type: string; entity_id: string; created_at: string };
 type ApiList<T> = { results: T[] };
 type AssistantProposal = { type: string; payload: Record<string, unknown>; summary: string; requiresConfirmation: true };
 type AssistantReply = { message: string; proposedActions?: AssistantProposal[]; needsClarification?: boolean };
@@ -16,6 +17,7 @@ const state = {
   borrowers: [] as Borrower[],
   loans: [] as Loan[],
   payments: [] as Payment[],
+  activity: [] as AuditEntry[],
   connected: false,
   loading: true,
   messages: [] as Array<{ role: "user" | "assistant"; content: string }>,
@@ -85,15 +87,8 @@ function renderPage() {
   } else if (state.page === "loans") {
     target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">LENDING PORTFOLIO</p><h1>Loans</h1><p class="muted">Review principal amounts and loan status.</p></div></div><section class="list-card">${state.connected && state.loans.length ? state.loans.map(l => `<div class="record-row"><span class="record-avatar loan-avatar">₱</span><div><strong>${peso(l.principal_minor)}</strong><small>${escapeHtml(l.currency)} · ${escapeHtml(l.status)}</small></div><span class="status-tag">${escapeHtml(l.status)}</span></div>`).join("") : empty("Loan records will appear here after secure owner login.")}</section>`;
   } else {
-    target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">AUDIT TRAIL</p><h1>Activity</h1><p class="muted">A clear history of recorded lending activity.</p></div></div><section class="list-card">${state.connected && state.payments.length ? state.payments.map(p => `<div class="record-row"><span class="record-avatar loan-avatar">₱</span><div><strong>Payment · ${peso(p.amount_minor)}</strong><small>${new Date(p.paid_at).toLocaleString("en-PH")}</small></div></div>`).join("") : empty("Your activity history will appear here after secure owner login.")}</section>`;
-  }
-  if (state.page === "borrowers") {
-    target.insertAdjacentHTML("afterbegin", borrowerFormMarkup());
-    bindRecordForms(target, loadData);
-  }
-  if (state.page === "loans") {
-    target.insertAdjacentHTML("afterbegin", loanFormMarkup(state.borrowers) + paymentFormMarkup(state.loans, state.borrowers));
-    bindRecordForms(target, loadData);
+    const rows = state.activity.map(a => "<div class=\"record-row\"><span class=\"record-avatar loan-avatar\">↻</span><div><strong>" + escapeHtml(a.action.replaceAll("_", " ")) + " · " + escapeHtml(a.entity_type) + "</strong><small>" + new Date(a.created_at).toLocaleString("en-PH") + " · Ref: " + escapeHtml(a.entity_id.slice(0,8)) + "</small></div></div>").join("");
+    target.innerHTML = "<div class=\"page-intro\"><div><p class=\"eyebrow\">AUDIT TRAIL</p><h1>Activity</h1><p class=\"muted\">Confirmed changes recorded by the system.</p></div></div><section class=\"list-card\">" + (state.connected && state.activity.length ? rows : empty("Confirmed activity will appear here after secure owner login.")) + "</section>";
   }
   target.querySelectorAll<HTMLElement>("[data-page]").forEach(el => el.addEventListener("click", () => { state.page = el.dataset.page ?? "home"; renderPage(); }));
 }
@@ -314,14 +309,15 @@ async function startApp() {
 async function loadData() {
   const connection = document.querySelector<HTMLElement>("#connection");
   try {
-    const [borrowers, loans, payments] = await Promise.all([
-      fetch("/api/borrowers"), fetch("/api/loans"), fetch("/api/payments")
+    const [borrowers, loans, payments, activity] = await Promise.all([
+      fetch("/api/borrowers"), fetch("/api/loans"), fetch("/api/payments"), fetch("/api/activity")
     ]);
-    if ([borrowers, loans, payments].some(r => r.status === 401 || r.status === 403)) throw new Error("Owner login required");
-    if (![borrowers, loans, payments].every(r => r.ok)) throw new Error("API unavailable");
+    if ([borrowers, loans, payments, activity].some(r => r.status === 401 || r.status === 403)) throw new Error("Owner login required");
+    if (![borrowers, loans, payments, activity].every(r => r.ok)) throw new Error("API unavailable");
     state.borrowers = (await borrowers.json() as ApiList<Borrower>).results;
     state.loans = (await loans.json() as ApiList<Loan>).results;
     state.payments = (await payments.json() as ApiList<Payment>).results;
+    state.activity = (await activity.json() as ApiList<AuditEntry>).results;
     state.connected = true;
     if (connection) { connection.innerHTML = "<i></i> Secure data connected"; connection.classList.add("online"); }
   } catch {
