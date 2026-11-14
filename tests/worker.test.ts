@@ -119,8 +119,8 @@ describe("API worker", () => {
       })
     } as unknown as D1Database;
     env.AI.run
-      .mockImplementationOnce(async () => ({ response: "{\\"intent\\": invalid}" }))
-      .mockImplementationOnce(async () => ({ response: "{\\"intent\\": invalid}" }));
+            .mockImplementationOnce(async () => ({ response: "not valid json" }))
+      .mockImplementationOnce(async () => ({ response: "not valid json" }));
     try {
       const response = await worker.fetch(new Request("https://example.test/api/assistant", {
         method: "POST",
