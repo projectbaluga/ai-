@@ -346,6 +346,59 @@ describe("API worker", () => {
     expect(env.AI.run).toHaveBeenCalledTimes(2);
   });
 
+  it("prepares a verified loan proposal when the model twice fails to format a complete Tagalog loan request", async () => {
+    const originalDb = env.DB;
+    env.DB = {
+      prepare: (sql: string) => ({
+        bind: (..._values: unknown[]) => ({
+          all: async () => ({ results: [] }),
+          first: async () => null,
+          run: async () => ({ success: true })
+        }),
+        all: async () => ({
+          results: sql.includes("SELECT id, full_name, phone FROM borrowers")
+            ? [{ id: "borrower-allan", full_name: "Allan Lobrigo", phone: null }]
+            : []
+        }),
+        first: async () => null,
+        run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "I will prepare the loan." }))
+      .mockImplementationOnce(async () => ({ response: "Sorry, I could not format this." }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [
+          { role: "user", content: "nagpautang ako nang 1000 pesos kay Allan Lobrigo ngayon araw at nais nya na bayaran ito next month at napagka-sunduan namin na may 5% interest" },
+          { role: "assistant", content: "Ano po ang interest type: one-time o monthly?" },
+          { role: "user", content: "one-time lang po" }
+        ] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "prepare_action",
+        proposedActions: [{
+          type: "create_loan",
+          payload: {
+            borrowerId: "borrower-allan",
+            principalMinor: 100000,
+            currency: "PHP",
+            interestType: "percentage",
+            interestValue: 5,
+            interestPeriod: "one_time"
+          },
+          requiresConfirmation: true
+        }]
+      });
+      expect(env.AI.run).toHaveBeenCalledTimes(2);
+    } finally {
+      env.DB = originalDb;
+    }
+  });
+
   it("returns a traceable 502 for malformed model output without logging user content", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     env.AI.run
