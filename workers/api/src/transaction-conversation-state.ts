@@ -41,7 +41,8 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
   const isShortFollowup = lastUser.length <= 180 && !/[?؟]/.test(lastUser);
   const suppliesTransactionDetail = /\d|%|\b(?:daily|weekly|monthly|one[- ]?time|fixed|percentage|araw|linggo|buwan|bukas|tomorrow|next\s+month|end\s+of\s+the\s+month|no\s+interest|without\s+interest|walang\s+tubo|walang\s+interest)\b/i.test(lastUser);
   const correction = /\b(?:actually|correction|instead|change|correct|mali|palitan|palit|ang ibig kong sabihin|dapat)\b/i.test(lastUser);
-  if (hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail && correction) {
+  const isNewLoanEvent = LOAN_EVENT.test(lastUser);
+  if (!isNewLoanEvent && hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail && correction) {
     return {
       status: "revising_transaction",
       cancelled: false,
@@ -50,7 +51,7 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
     };
   }
 
-  if (hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail) {
+  if (!isNewLoanEvent && hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail) {
     return {
       status: "continuing_transaction",
       cancelled: false,
@@ -59,7 +60,7 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
     };
   }
 
-  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)[.!\\s]*$/i.test(lastUser);
+  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)[.!\s]*$/i.test(lastUser);
   const assistantNamedAction = /\\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\\b/i.test(lastAssistant) && /[?؟]/.test(lastAssistant);
   if (affirmative && assistantNamedAction) {
     return {
