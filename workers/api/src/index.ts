@@ -270,7 +270,7 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
   }
 
   const payload = JSON.parse(claim.payload_json) as JsonObject;
-  let entityId = crypto.randomUUID();
+  let entityId: string = crypto.randomUUID();
   const now = new Date().toISOString();
 
   try {
