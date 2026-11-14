@@ -1,0 +1,7 @@
+name = "ai-lending-assistant"
+pages_build_output_dir = "../../dist/lending-assistant"
+compatibility_date = "2026-11-14"
+
+[[services]]
+binding = "API"
+service = "ai-workspace-api"
