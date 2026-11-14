@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
 import worker from "../workers/api/src/index";
 
+const db = (env as unknown as { DB: D1Database }).DB;
+
 const testEnv = {
   ...env,
   OWNER_API_TOKEN: "d1-integration-test-secret",
@@ -33,7 +35,7 @@ async function confirm(actionId: string) {
 async function seedBorrowerAndLoan() {
   const borrowerId = crypto.randomUUID();
   const loanId = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO borrowers (id, full_name) VALUES (?, ?)")
+  await db.prepare("INSERT INTO borrowers (id, full_name) VALUES (?, ?)")
     .bind(borrowerId, "Integration Borrower").run();
   await env.DB.prepare(
     "INSERT INTO loans (id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period) VALUES (?, ?, 100000, 'PHP', 'none', 0, 'one_time')"
