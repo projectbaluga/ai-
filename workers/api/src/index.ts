@@ -486,7 +486,7 @@ export function buildFinancialLookupReply(message: string, language: SupportedLa
   const payments = Array.isArray(targetedMatches.payments)
     ? (targetedMatches.payments as unknown[]).filter(payment => isRecord(payment) && payment.loan_id === loan.id)
     : [];
-  const recordedMinor = payments.reduce((sum, payment) => sum + (isRecord(payment) && Number.isSafeInteger(payment.amount_minor) ? Number(payment.amount_minor) : 0), 0);
+  const recordedMinor = payments.reduce<number>((sum, payment) => sum + (isRecord(payment) && Number.isSafeInteger(payment.amount_minor) ? Number(payment.amount_minor) : 0), 0);
   const paymentText = payments.length
     ? (english ? "I found " + payments.length + " recorded payment(s), totaling " + peso(recordedMinor) + "." : "May " + payments.length + " recorded payment(s) na nakita, na may kabuuang " + peso(recordedMinor) + ".")
     : (english ? "No recorded payment was found in the matching records." : "Wala akong nakitang recorded payment sa matching records.");
