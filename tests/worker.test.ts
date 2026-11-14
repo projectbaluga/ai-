@@ -3,7 +3,6 @@ import worker from "../workers/api/src/index";
 
 const env = {
   DB: {} as D1Database,
-  AI: {} as Ai,
   OWNER_API_TOKEN: "test-secret"
 };
 
@@ -25,5 +24,15 @@ describe("API worker", () => {
     });
     const response = await worker.fetch(request, env);
     expect(response.status).toBe(404);
+  });
+
+  it("rejects invalid prepared actions without touching the database", async () => {
+    const request = new Request("https://example.test/api/actions/prepare", {
+      method: "POST",
+      headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+      body: JSON.stringify({ type: "record_payment", payload: { loanId: "", amountMinor: -5, paidAt: "not-a-date" } })
+    });
+    const response = await worker.fetch(request, env);
+    expect(response.status).toBe(400);
   });
 });
