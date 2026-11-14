@@ -632,7 +632,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(messages)) {
       return json({
         intent: "answer_question",
-        message: firstPlainText,
+        message: isLendingOverviewRequest(lastUserMessage) ? removeInterestClarificationFromOverview(firstPlainText) : firstPlainText,
         proposedActions: [],
         needsClarification: false
       });
@@ -649,7 +649,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       if (!parsed && retryPlainText && !looksLikeStructuredModelOutput(retryPlainText) && !isPotentialWriteRequest(messages)) {
         return json({
           intent: "answer_question",
-          message: retryPlainText,
+          message: isLendingOverviewRequest(lastUserMessage) ? removeInterestClarificationFromOverview(retryPlainText) : retryPlainText,
           proposedActions: [],
           needsClarification: false
         });
