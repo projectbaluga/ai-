@@ -13,7 +13,7 @@ export interface Env {
   };
 }
 
-type ActionType = "create_borrower" | "create_loan" | "record_payment" | "update_borrower" | "archive_borrower";
+type ActionType = "create_borrower" | "create_loan" | "record_payment" | "update_borrower" | "archive_borrower" | "update_loan_terms";
 type JsonObject = Record<string, unknown>;
 
 const json = (data: unknown, status = 200): Response =>
@@ -65,6 +65,15 @@ function validateAction(type: unknown, payload: unknown): { type: ActionType; pa
     if (!text(payload.borrowerId, 80)) return null;
     return { type, payload };
   }
+  if (type === "update_loan_terms") {
+    if (!text(payload.loanId, 80)) return null;
+    if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
+    if (typeof payload.interestValue !== "number" || !Number.isFinite(payload.interestValue) || payload.interestValue < 0) return null;
+    if (!["one_time", "monthly"].includes(String(payload.interestPeriod))) return null;
+    if (payload.interestType === "none" && payload.interestValue !== 0) return null;
+    return { type, payload };
+  }
+
   if (type === "record_payment") {
     if (!text(payload.loanId, 80)) return null;
     if (!Number.isSafeInteger(payload.amountMinor) || (payload.amountMinor as number) <= 0) return null;
@@ -208,8 +217,9 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     "Return ONLY valid JSON with keys: intent, message, proposedActions, needsClarification.",
     "intent must be one of answer_question, search_records, prepare_action, explain_report, request_clarification, unknown.",
     "proposedActions must be an array of at most 3 objects with type, payload, summary, requiresConfirmation:true.",
-    "You may propose only create_borrower, update_borrower, archive_borrower, create_loan, or record_payment. Never claim an action was saved.",
+    "You may propose only create_borrower, update_borrower, archive_borrower, create_loan, update_loan_terms, or record_payment. Never claim an action was saved.",
     "Only propose update_borrower or archive_borrower when the matching borrower ID is present in verified record context and the owner clearly requested that change. Archiving hides the borrower from active lists; never imply that it deletes records.",
+    "Only propose update_loan_terms when the matching active loan ID is present in verified record context and the owner clearly requested the exact new interest type, value, and period. Never invent or reinterpret interest terms.",
     "For create_loan, only propose when borrowerId, principalMinor, interestType, interestValue, and interestPeriod are explicitly known. Do not invent or infer interest terms.",
     "For record_payment, only propose when loanId, amountMinor, and paidAt are explicitly known. Ask clarification if any required field is missing.",
     "Amounts in *Minor fields are integer centavos. Never convert uncertain amounts or invent IDs; ask the user for a record ID or use search tools later when available.",
@@ -295,6 +305,16 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
         ? env.DB.prepare("UPDATE borrowers SET full_name = ?, phone = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
             .bind(payload.fullName, payload.phone ?? null, payload.notes ?? null, entityId)
         : env.DB.prepare("UPDATE borrowers SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(entityId);
+    } else if (claim.action_type === "update_loan_terms") {
+      entityType = "loan";
+      entityId = String(payload.loanId);
+      const loan = await env.DB.prepare("SELECT id FROM loans WHERE id = ? AND status = 'active'").bind(entityId).first<{ id: string }>();
+      if (!loan) {
+        await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ?").bind(actionId).run();
+        return json({ error: "Active loan not found. No terms were changed." }, 404);
+      }
+      statement = env.DB.prepare("UPDATE loans SET interest_type = ?, interest_value = ?, interest_period = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(payload.interestType, payload.interestValue, payload.interestPeriod, entityId);
     } else if (claim.action_type === "create_loan") {
       entityType = "loan";
       const borrower = await env.DB.prepare("SELECT id FROM borrowers WHERE id = ? AND archived_at IS NULL")
