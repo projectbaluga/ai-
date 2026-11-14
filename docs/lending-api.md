@@ -94,7 +94,7 @@ All require owner authentication. These endpoints return stored records and do n
 
 The response contains `intent`, `message`, `proposedActions`, and `needsClarification`. Every proposal must include `requiresConfirmation: true`. The AI endpoint does not write to D1. Model output is untrusted and must pass through the normal prepare/confirm flow. The frontend now presents proposal details and requires a separate owner confirmation before saving. For each user message, the Worker also extracts up to five specific name/identifier terms and runs parameterized, read-only targeted searches across the full borrower, loan, and payment tables (up to 10 matches per category). This supplements the limited general context so older records can be found; partial matches still need owner verification before any proposed change.
 
-The Worker uses the Cloudflare Workers AI binding and `@cf/meta/llama-3.1-8b-instruct`. If AI is unavailable or returns invalid output, the endpoint returns an error; regular app controls remain the fallback.
+The Worker uses a dedicated server-side Cloudflare Workers AI adapter (`workers/api/src/workers-ai-provider.ts`) and the `@cf/meta/llama-3.1-8b-instruct` model. Lending-specific behavior is maintained in a separately versioned prompt (`workers/api/src/lending-assistant-prompt.ts`), including multilingual guidance, allowed action types, record-context rules, duplicate-match clarification, and financial safety boundaries. The model receives no database handle and cannot write records; its output is parsed and must pass the existing prepare/confirm flow. If AI is unavailable or returns invalid output, the endpoint returns an error; regular app controls remain the fallback.
 
 
 ## Frontend/API routing
