@@ -621,8 +621,8 @@ async function prepareAction(request: Request, env: Env): Promise<Response> {
 
   if (action.type === "create_loan" && text(action.payload.borrowerFullName, 160)) {
     const matches = await env.DB.prepare(
-      "SELECT id, full_name FROM borrowers WHERE archived_at IS NULL AND lower(full_name) = lower(?) ORDER BY full_name LIMIT 5"
-    ).bind(action.payload.borrowerFullName).all<{ id: string; full_name: string }>();
+      "SELECT id, full_name FROM borrowers WHERE archived_at IS NULL AND (lower(full_name) = lower(?) OR (? IS NOT NULL AND phone = ?)) ORDER BY full_name LIMIT 5"
+    ).bind(action.payload.borrowerFullName, action.payload.phone ?? null, action.payload.phone ?? null).all<{ id: string; full_name: string }>();
     if ((matches.results ?? []).length > 1) {
       return json({ error: "More than one borrower has that name. Choose the correct existing borrower before saving.", matches: matches.results }, 409);
     }
@@ -742,17 +742,21 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
       let borrowerId = text(payload.borrowerId, 80) ? payload.borrowerId : null;
       if (text(payload.borrowerFullName, 160)) {
         const existing = await env.DB.prepare(
-          "SELECT id, full_name FROM borrowers WHERE archived_at IS NULL AND lower(full_name) = lower(?) ORDER BY full_name LIMIT 2"
-        ).bind(payload.borrowerFullName).all<{ id: string; full_name: string }>();
-        if ((existing.results ?? []).length > 0) {
+          "SELECT id, full_name FROM borrowers WHERE archived_at IS NULL AND (lower(full_name) = lower(?) OR (? IS NOT NULL AND phone = ?)) ORDER BY full_name LIMIT 3"
+        ).bind(payload.borrowerFullName, payload.phone ?? null, payload.phone ?? null).all<{ id: string; full_name: string }>();
+        if ((existing.results ?? []).length > 1) {
           await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ?").bind(actionId).run();
-          return json({ error: "A borrower with that name was registered while this review was open. Please review the loan again to avoid a duplicate.", matches: existing.results }, 409);
+          return json({ error: "More than one borrower matches these details. Please review the borrower before saving.", matches: existing.results }, 409);
         }
-        createdBorrowerId = crypto.randomUUID();
-        borrowerId = createdBorrowerId;
-        additionalStatements.push(env.DB.prepare(
-          "INSERT INTO borrowers (id, full_name, phone, notes) VALUES (?, ?, ?, ?)"
-        ).bind(createdBorrowerId, payload.borrowerFullName, payload.phone ?? null, null));
+        if ((existing.results ?? []).length === 1) {
+          borrowerId = existing.results![0].id;
+        } else {
+          createdBorrowerId = crypto.randomUUID();
+          borrowerId = createdBorrowerId;
+          additionalStatements.push(env.DB.prepare(
+            "INSERT INTO borrowers (id, full_name, phone, notes) VALUES (?, ?, ?, ?)"
+          ).bind(createdBorrowerId, payload.borrowerFullName, payload.phone ?? null, null));
+        }
       } else if (borrowerId) {
         const borrower = await env.DB.prepare("SELECT id FROM borrowers WHERE id = ? AND archived_at IS NULL")
           .bind(borrowerId).first<{ id: string }>();
