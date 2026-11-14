@@ -470,22 +470,44 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
   const principalMinor = Math.round(principal * 100);
   if (!Number.isFinite(principal) || principal <= 0 || !Number.isSafeInteger(principalMinor)) return null;
 
-  const interestMatch = userText.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (!interestMatch) return null;
-  const interestValue = Number(interestMatch[1]);
-  if (!Number.isFinite(interestValue) || interestValue < 0) return null;
-
-  const oneTime = /\b(?:one[- ]?time|one[- ]off|isang beses|isang hulog)\b/i.test(userText);
-  const monthly = /\b(?:monthly|buwan(?:an)?|kada buwan)\b/i.test(userText);
-  if (oneTime === monthly) return null;
-
+  const noInterestMatch = [...userText.matchAll(/\b(?:walang\s+(?:interest|tubo)|interest[- ]?free|no\s+interest)\b/gi)].at(-1);
+  const percentMatches = [...userText.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
+  const lastPercent = percentMatches.at(-1);
+  const noInterest = Boolean(noInterestMatch && (!lastPercent || noInterestMatch.index! > lastPercent.index!));
+  let interestType: "none" | "percentage" = "none";
+  let interestValue = 0;
+  let interestFrequency = "one_time";
+  if (!noInterest) {
+    if (!lastPercent) return null;
+    interestType = "percentage";
+    interestValue = Number(lastPercent[1]);
+    if (!Number.isFinite(interestValue) || interestValue < 0) return null;
+    const frequencyMatches = [
+      { value: "one_time", regex: /\b(?:one[- ]?time|one[- ]?off|isang beses|isang hulog)\b/gi },
+      { value: "daily", regex: /\b(?:daily|araw[- ]araw|kada araw)\b/gi },
+      { value: "weekly", regex: /\b(?:weekly|lingguhan|kada linggo)\b/gi },
+      { value: "monthly", regex: /\b(?:monthly|buwan(?:an)?|kada buwan)\b/gi },
+      { value: "annual", regex: /\b(?:annually|annual|yearly|taunan|kada taon)\b/gi }
+    ];
+    const found = frequencyMatches.map(item => ({ value: item.value, index: [...userText.matchAll(item.regex)].at(-1)?.index ?? -1 }))
+      .filter(item => item.index >= 0).sort((a, b) => b.index - a.index);
+    if (!found.length) return null;
+    interestFrequency = found[0].value;
+  }
+  const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|bukas|tomorrow)/i);
+  const explicitDateMatch = userText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  const dueDate = explicitDateMatch && isIsoDate(explicitDateMatch[1]) ? explicitDateMatch[1] : undefined;
+  const repaymentFrequency = /(?:weekly payments|weekly hulog|kada linggo ang hulog|every week)/i.test(userText) ? "weekly" :
+    /(?:daily payments|daily hulog|araw-araw ang hulog|every day)/i.test(userText) ? "daily" :
+    /(?:biweekly|every two weeks|kada dalawang linggo)/i.test(userText) ? "biweekly" :
+    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|every month)/i.test(userText) ? "monthly" : "one_time";
   const borrower = matches[0] ?? null;
-  const repaymentTimingMentioned = /\b(?:next month|sa susunod na buwan|next week|bukas|tomorrow|within a week)\b/i.test(userText);
-  const message = "Nakuha ko na po ang detalye. Ihahanda ko ang loan para kay " + borrowerName +
+  const interestDescription = interestType === "none" ? "walang interest" : interestValue + "% " + interestFrequency + " interest";
+  const message = "Nakuha ko po. Ihahanda ko ang loan para kay " + borrowerName +
     ": ₱" + principal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
-    " principal, " + interestValue + "% " + (oneTime ? "one-time interest" : "monthly interest") +
-    (repaymentTimingMentioned ? ". Paalala: hindi pa nase-save ng app ang 'next month' bilang due date." : "") +
-    " Pakireview ang proposal bago i-save.";
+    " principal at " + interestDescription +
+    (dueDate ? ", due date " + dueDate : repaymentTimingMatch ? ", napag-usapang bayaran: " + repaymentTimingMatch[0] : "") +
+    ". Pakireview ang detalye bago i-save.";
   return {
     intent: "prepare_action",
     message,
@@ -495,13 +517,16 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
         ...(borrower ? { borrowerId: borrower.id } : { borrowerFullName: borrowerName }),
         principalMinor,
         currency: "PHP",
-        interestType: "percentage",
+        interestType,
         interestValue,
-        interestPeriod: oneTime ? "one_time" : "monthly"
+        interestPeriod: interestFrequency === "monthly" ? "monthly" : "one_time",
+        interestFrequency,
+        ...(dueDate ? { dueDate } : {}),
+        ...(repaymentTimingMatch ? { repaymentTimingNote: repaymentTimingMatch[0] } : {}),
+        repaymentFrequency
       },
       summary: (borrower ? "Gumawa ng loan record para kay " : "Irehistro si ") + borrowerName + (borrower ? " na may principal na ₱" : " bilang borrower at gumawa ng loan na ₱") +
-        principal.toLocaleString("en-PH", { maximumFractionDigits: 2 }) + " at " + interestValue + "% " +
-        (oneTime ? "one-time interest" : "monthly interest"),
+        principal.toLocaleString("en-PH", { maximumFractionDigits: 2 }) + " at " + interestDescription,
       requiresConfirmation: true
     }],
     needsClarification: false
