@@ -41,7 +41,7 @@ function shell() {
         <div class="sidebar-bottom"><div class="owner-avatar">O</div><div><strong>Owner workspace</strong><small>Private lending records</small></div></div>
       </aside>
       <main class="main-area">
-        <header class="topbar"><div><span class="mobile-brand">AI Workspace</span><span class="crumb">Lending / <b id="page-label">Overview</b></span></div><span class="connection" id="connection"><i></i> Checking connection</span></header>
+        <header class="topbar"><div><span class="mobile-brand">AI Workspace</span><span class="crumb">Lending / <b id="page-label">Overview</b></span></div><div class="top-actions"><span class="connection" id="connection"><i></i> Checking connection</span><button class="logout-button" id="logout-button" type="button">Sign out</button></div></header>
         <section class="content" id="page-content"></section>
       </main>
       <button class="assistant-fab" id="assistant-open" aria-label="Open AI assistant"><span>✦</span><b>Ask AI</b></button>
@@ -94,6 +94,7 @@ function escapeHtml(value: string) { return value.replace(/[&<>"']/g, c => ({ "&
 function bindShell() {
   document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach(b => b.addEventListener("click", () => { state.page = b.dataset.page ?? "home"; renderPage(); }));
   document.querySelector("#assistant-open")?.addEventListener("click", openAssistant);
+  document.querySelector("#logout-button")?.addEventListener("click", logout);
   document.querySelector("#assistant-close")?.addEventListener("click", closeAssistant);
   document.querySelector<HTMLFormElement>("#chat-form")?.addEventListener("submit", sendMessage);
   document.querySelector<HTMLButtonElement>("#voice-btn")?.addEventListener("click", toggleVoice);
@@ -179,6 +180,60 @@ function toggleVoice() {
   try { recognition.start(); } catch { recognition.onend?.(); }
 }
 
+
+function renderLogin(message = "") {
+  app!.innerHTML = `
+    <main class="login-screen">
+      <form class="login-card" id="login-form">
+        <div class="login-mark">A</div>
+        <p class="eyebrow">PRIVATE OWNER WORKSPACE</p>
+        <h1>Welcome back.</h1>
+        <p class="muted">Sign in to securely access your lending records and AI assistant.</p>
+        <label for="owner-password">Owner passphrase</label>
+        <input id="owner-password" type="password" autocomplete="current-password" required maxlength="512" placeholder="Enter your private passphrase" />
+        <p class="login-error" id="login-error">${escapeHtml(message)}</p>
+        <button class="login-submit" type="submit">Sign in securely</button>
+        <small>Your passphrase is sent only to the app API over HTTPS and is never stored in this browser.</small>
+      </form>
+    </main>`;
+  document.querySelector<HTMLFormElement>("#login-form")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = document.querySelector<HTMLButtonElement>(".login-submit");
+    const password = document.querySelector<HTMLInputElement>("#owner-password")?.value ?? "";
+    if (button) { button.disabled = true; button.textContent = "Signing in…"; }
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST", headers: { "content-type": "application/json" },
+        credentials: "same-origin", body: JSON.stringify({ password })
+      });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Sign in failed.");
+      shell();
+      await loadData();
+    } catch (error) {
+      renderLogin(error instanceof Error ? error.message : "Unable to sign in.");
+    }
+  });
+}
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
+  state.connected = false;
+  state.messages = [];
+  renderLogin("You have signed out.");
+}
+
+async function startApp() {
+  try {
+    const response = await fetch("/api/auth/session", { credentials: "same-origin" });
+    if (!response.ok) { renderLogin(); return; }
+    shell();
+    await loadData();
+  } catch {
+    renderLogin("The secure API is not reachable yet. Please try again later.");
+  }
+}
+
 async function loadData() {
   const connection = document.querySelector<HTMLElement>("#connection");
   try {
@@ -199,8 +254,7 @@ async function loadData() {
 }
 
 if ("speechSynthesis" in window) state.voiceAvailable = true;
-shell();
-void loadData();
+void startApp();
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(console.error));
