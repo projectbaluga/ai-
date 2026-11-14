@@ -375,7 +375,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
 
     if (!parsed) {
       console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, ...modelOutputDiagnostics(diagnosticOutput) }));
-      return json({ error: "AI could not format a safe response. Please try again.", requestId }, 502);
+      return json({ error: "AI returned a response in an unsupported format. Please try again.", requestId }, 502);
     }
     return json(parsed);
   } catch (error) {
