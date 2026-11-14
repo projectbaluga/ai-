@@ -229,6 +229,39 @@ describe("API worker", () => {
     expect(env.AI.run).toHaveBeenCalledOnce();
   });
 
+  it("normalizes common borrower registration fields into the validated schema", async () => {
+    const proposal = {
+      intent: "prepare_action",
+      message: "Ihahanda ko ang borrower profile para ma-review ninyo.",
+      proposedActions: [{
+        type: "create_borrower",
+        payload: { name: "Wilson Villanueva", contactNumber: "0976153463" },
+        summary: "I-register si Wilson Villanueva",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    env.AI.run.mockImplementationOnce(async () => ({ response: JSON.stringify(proposal) }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [
+        { role: "user", content: "Wilson Villanueva 0976153463" },
+        { role: "assistant", content: "Ihahanda ko ang registration." },
+        { role: "user", content: "paki register mo na po ito" }
+      ] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "prepare_action",
+      proposedActions: [{
+        type: "create_borrower",
+        payload: { fullName: "Wilson Villanueva", phone: "0976153463" },
+        requiresConfirmation: true
+      }]
+    });
+    expect(env.AI.run).toHaveBeenCalledOnce();
+  });
+
   it("answers loan-process how-to questions naturally without treating them as write requests", async () => {
     const reply = "Para mag-process ng loan: piliin muna ang borrower, ilagay ang principal at napagkasunduang interest terms, i-review ang due dates, at kumpirmahin bago i-save.";
     env.AI.run.mockImplementationOnce(async () => ({ response: reply }));
