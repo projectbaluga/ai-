@@ -73,7 +73,10 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
     return { type, payload };
   }
   if (type === "create_loan") {
-    if (!text(payload.borrowerId, 80)) return null;
+    const hasBorrowerId = text(payload.borrowerId, 80);
+    const hasBorrowerName = text(payload.borrowerFullName, 160);
+    if (hasBorrowerId === hasBorrowerName) return null;
+    if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
     if (!Number.isSafeInteger(payload.principalMinor) || (payload.principalMinor as number) <= 0) return null;
     if (payload.currency !== undefined && payload.currency !== "PHP") return null;
     if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
@@ -283,8 +286,22 @@ export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
   if (!isRecord(candidate) || !supportedIntents.includes(candidate.intent as AssistantIntent) ||
       !text(candidate.message, 4000) || !Array.isArray(candidate.proposedActions) ||
       typeof candidate.needsClarification !== "boolean") return null;
+  let rawActions = candidate.proposedActions as unknown[];
+  const borrowerAction = rawActions.find(item => isRecord(item) && ["create_borrower", "createBorrower", "register_borrower", "registerBorrower"].includes(String(item.type)));
+  const loanAction = rawActions.find(item => isRecord(item) && ["create_loan", "createLoan"].includes(String(item.type)));
+  if (borrowerAction && loanAction && isRecord(borrowerAction) && isRecord(loanAction) &&
+      isRecord(borrowerAction.payload) && isRecord(loanAction.payload) &&
+      ["PENDING_BORROWER_ID", "pending_borrower_id"].includes(String(loanAction.payload.borrowerId))) {
+    const fullName = borrowerAction.payload.fullName ?? borrowerAction.payload.name;
+    if (!text(fullName, 160)) return null;
+    const combinedPayload: JsonObject = { ...loanAction.payload, borrowerFullName: fullName };
+    if (text(borrowerAction.payload.phone, 40)) combinedPayload.phone = borrowerAction.payload.phone;
+    delete combinedPayload.borrowerId;
+    rawActions = rawActions.filter(item => item !== borrowerAction);
+    rawActions = rawActions.map(item => item === loanAction ? { ...loanAction, payload: combinedPayload } : item);
+  }
   const proposedActions = [];
-  for (const item of candidate.proposedActions) {
+  for (const item of rawActions) {
     if (!isRecord(item) || !text(item.type, 80) || !isRecord(item.payload) ||
         !text(item.summary, 1000) || item.requiresConfirmation !== true) return null;
     const validated = validateAction(item.type, item.payload);
@@ -413,7 +430,11 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
     const name = normalize(borrower.full_name);
     return name.length > 0 && (" " + normalizedText + " ").includes(" " + name + " ");
   });
-  if (matches.length !== 1) return null;
+  if (matches.length > 1) return null;
+  const nameMatch = userText.match(/\bkay\s+([\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){1,3})/iu);
+  const borrowerName = matches.length === 1 ? matches[0].full_name : nameMatch?.[1]
+    ?.replace(/\s+(?:ngayon|today|kahapon|yesterday|bukas|tomorrow)$/i, "").trim();
+  if (!borrowerName) return null;
 
   const amountMatch = userText.match(/\b(?:nagpautang|pinautang|pinahiram|nangutang|borrowed|lent|loaned|lend)\b[\s\S]{0,120}?(?:ng|nang|for|of)?\s*(?:₱|php)?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:pesos?|php)?/i);
   if (!amountMatch) return null;
@@ -430,9 +451,9 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
   const monthly = /\b(?:monthly|buwan(?:an)?|kada buwan)\b/i.test(userText);
   if (oneTime === monthly) return null;
 
-  const borrower = matches[0];
+  const borrower = matches[0] ?? null;
   const repaymentTimingMentioned = /\b(?:next month|sa susunod na buwan|next week|bukas|tomorrow|within a week)\b/i.test(userText);
-  const message = "Nakuha ko na po ang detalye. Ihahanda ko ang loan para kay " + borrower.full_name +
+  const message = "Nakuha ko na po ang detalye. Ihahanda ko ang loan para kay " + borrowerName +
     ": ₱" + principal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
     " principal, " + interestValue + "% " + (oneTime ? "one-time interest" : "monthly interest") +
     (repaymentTimingMentioned ? ". Paalala: hindi pa nase-save ng app ang 'next month' bilang due date." : "") +
@@ -443,14 +464,14 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
     proposedActions: [{
       type: "create_loan",
       payload: {
-        borrowerId: borrower.id,
+        ...(borrower ? { borrowerId: borrower.id } : { borrowerFullName: borrowerName }),
         principalMinor,
         currency: "PHP",
         interestType: "percentage",
         interestValue,
         interestPeriod: oneTime ? "one_time" : "monthly"
       },
-      summary: "Gumawa ng loan record para kay " + borrower.full_name + " na may principal na ₱" +
+      summary: (borrower ? "Gumawa ng loan record para kay " : "Irehistro si ") + borrowerName + (borrower ? " na may principal na ₱" : " bilang borrower at gumawa ng loan na ₱") +
         principal.toLocaleString("en-PH", { maximumFractionDigits: 2 }) + " at " + interestValue + "% " +
         (oneTime ? "one-time interest" : "monthly interest"),
       requiresConfirmation: true
@@ -596,6 +617,19 @@ async function prepareAction(request: Request, env: Env): Promise<Response> {
   const action = validateAction(body.type, body.payload);
   if (!action) return json({ error: "Invalid action type or payload." }, 400);
 
+  if (action.type === "create_loan" && text(action.payload.borrowerFullName, 160)) {
+    const matches = await env.DB.prepare(
+      "SELECT id, full_name FROM borrowers WHERE archived_at IS NULL AND lower(full_name) = lower(?) ORDER BY full_name LIMIT 5"
+    ).bind(action.payload.borrowerFullName).all<{ id: string; full_name: string }>();
+    if ((matches.results ?? []).length > 1) {
+      return json({ error: "More than one borrower has that name. Choose the correct existing borrower before saving.", matches: matches.results }, 409);
+    }
+    if ((matches.results ?? []).length === 1) {
+      action.payload.borrowerId = matches.results![0].id;
+      delete action.payload.borrowerFullName;
+    }
+  }
+
   // Prevent accidental duplicate borrower profiles before creating a pending action.
   if (action.type === "create_borrower") {
     const phone = action.payload.phone ?? null;
@@ -666,10 +700,12 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
   const payload = JSON.parse(claim.payload_json) as JsonObject;
   let entityId: string = crypto.randomUUID();
   const now = new Date().toISOString();
+  let createdBorrowerId: string | null = null;
 
   try {
     let statement: D1PreparedStatement;
     let entityType: string;
+    const additionalStatements: D1PreparedStatement[] = [];
 
     if (claim.action_type === "create_borrower") {
       entityType = "borrower";
@@ -701,15 +737,32 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
         .bind(payload.interestType, payload.interestValue, payload.interestPeriod, entityId);
     } else if (claim.action_type === "create_loan") {
       entityType = "loan";
-      const borrower = await env.DB.prepare("SELECT id FROM borrowers WHERE id = ? AND archived_at IS NULL")
-        .bind(payload.borrowerId).first<{ id: string }>();
-      if (!borrower) {
-        await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ?").bind(actionId).run();
-        return json({ error: "Borrower not found or archived. No loan was created." }, 404);
+      let borrowerId = text(payload.borrowerId, 80) ? payload.borrowerId : null;
+      if (text(payload.borrowerFullName, 160)) {
+        const existing = await env.DB.prepare(
+          "SELECT id, full_name FROM borrowers WHERE archived_at IS NULL AND lower(full_name) = lower(?) ORDER BY full_name LIMIT 2"
+        ).bind(payload.borrowerFullName).all<{ id: string; full_name: string }>();
+        if ((existing.results ?? []).length > 0) {
+          await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ?").bind(actionId).run();
+          return json({ error: "A borrower with that name was registered while this review was open. Please review the loan again to avoid a duplicate.", matches: existing.results }, 409);
+        }
+        createdBorrowerId = crypto.randomUUID();
+        borrowerId = createdBorrowerId;
+        additionalStatements.push(env.DB.prepare(
+          "INSERT INTO borrowers (id, full_name, phone, notes) VALUES (?, ?, ?, ?)"
+        ).bind(createdBorrowerId, payload.borrowerFullName, payload.phone ?? null, null));
+      } else if (borrowerId) {
+        const borrower = await env.DB.prepare("SELECT id FROM borrowers WHERE id = ? AND archived_at IS NULL")
+          .bind(borrowerId).first<{ id: string }>();
+        if (!borrower) {
+          await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ?").bind(actionId).run();
+          return json({ error: "Borrower not found or archived. No loan was created." }, 404);
+        }
       }
+      if (!borrowerId) throw new Error("Loan borrower is missing.");
       statement = env.DB.prepare(
         "INSERT INTO loans (id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(entityId, payload.borrowerId, payload.principalMinor, payload.currency ?? "PHP", payload.interestType, payload.interestValue, payload.interestPeriod, payload.notes ?? null);
+      ).bind(entityId, borrowerId, payload.principalMinor, payload.currency ?? "PHP", payload.interestType, payload.interestValue, payload.interestPeriod, payload.notes ?? null);
     } else {
       entityType = "payment";
       const loan = await env.DB.prepare("SELECT id FROM loans WHERE id = ? AND status = 'active'")
@@ -723,8 +776,15 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
       ).bind(entityId, payload.loanId, payload.amountMinor, payload.paidAt, payload.notes ?? null);
     }
 
+    const auditStatements = createdBorrowerId
+      ? [env.DB.prepare(
+          "INSERT INTO audit_log (id, actor, action, entity_type, entity_id, details_json) VALUES (?, 'owner', 'create_borrower', 'borrower', ?, ?)"
+        ).bind(crypto.randomUUID(), createdBorrowerId, JSON.stringify({ fullName: payload.borrowerFullName, phone: payload.phone ?? null }))]
+      : [];
     await env.DB.batch([
+      ...additionalStatements,
       statement,
+      ...auditStatements,
       env.DB.prepare(
         "INSERT INTO audit_log (id, actor, action, entity_type, entity_id, details_json) VALUES (?, 'owner', ?, ?, ?, ?)"
       ).bind(crypto.randomUUID(), claim.action_type, entityType, entityId, JSON.stringify(payload)),
@@ -733,7 +793,7 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
       ).bind(entityId, now, actionId)
     ]);
 
-    return json({ actionId, status: "confirmed", entityType, entityId }, 201);
+    return json({ actionId, status: "confirmed", entityType, entityId, borrowerId: createdBorrowerId, borrowerCreated: Boolean(createdBorrowerId) }, 201);
   } catch {
     await env.DB.prepare("UPDATE pending_actions SET status = 'failed' WHERE id = ? AND status = 'confirming'").bind(actionId).run();
     return json({ error: "Could not save the confirmed action. Check records before retrying." }, 500);
