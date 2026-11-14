@@ -59,4 +59,16 @@ describe("transaction conversation state", () => {
       carriesTransactionContext: false
     });
   });
+
+  it("does not mistake an unrelated short statement for a loan-term answer", () => {
+    const messages: AssistantMessage[] = [
+      { role: "user", content: "I lent Jeffrey Peconcillo 1000 pesos." },
+      { role: "assistant", content: "What interest terms did you agree on?" },
+      { role: "user", content: "I want to change my password." }
+    ];
+    expect(buildTransactionConversationState(messages)).toMatchObject({
+      status: "independent_turn",
+      carriesTransactionContext: false
+    });
+  });
 });
