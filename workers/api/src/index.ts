@@ -188,9 +188,14 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   }
 
   const messages: AssistantMessage[] = [];
+  let totalMessageCharacters = 0;
   for (const item of body.messages) {
     if (!isRecord(item) || item.role !== "user" && item.role !== "assistant" || !text(item.content, 4000)) {
       return json({ error: "Each message must have a valid role and non-empty content up to 4000 characters." }, 400);
+    }
+    totalMessageCharacters += item.content.length;
+    if (totalMessageCharacters > 12000) {
+      return json({ error: "Keep the combined conversation context under 12000 characters." }, 400);
     }
     messages.push({ role: item.role, content: item.content });
   }
