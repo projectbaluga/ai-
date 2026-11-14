@@ -14,11 +14,11 @@ export interface TransactionConversationState {
   instruction: string;
 }
 
-const LOAN_EVENT = /\\b(?:nagpautang|magpautang|pinahiram|nangutang|umutang|borrowed|i\\s+(?:lend|lent|loaned)|create\\s+(?:a\\s+)?loan|record\\s+(?:a\\s+)?loan)\\b/i;
-const TERMS_QUESTION = /\\b(?:interest|loan terms|interest type|interest value|interest period|daily|weekly|monthly|tubo|patong)\\b/i;
+const LOAN_EVENT = /\b(?:nagpautang|magpautang|pinahiram|nangutang|umutang|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i;
+const TERMS_QUESTION = /\b(?:interest|loan terms|interest type|interest value|interest period|daily|weekly|monthly|tubo|patong)\b/i;
 
 export function isExplicitTransactionCancellation(message: string): boolean {
-  return /^(?:please\\s+)?(?:cancel|stop|never\\s*mind|forget\\s+it|do\\s+not\\s+proceed|don['’]?t\\s+proceed|huwag\\s+na|wag\\s+na|hindi\\s+na|kanselahin|itigil)(?:\\b|$)[\\s.!?,-]*.*$/i.test(message.trim());
+  return /^(?:please\s+)?(?:cancel|stop|never\s*mind|forget\s+it|do\s+not\s+proceed|don['’]?t\s+proceed|huwag\s+na|wag\s+na|hindi\s+na|kanselahin|itigil)(?:\b|$)[\s.!?,-]*.*$/i.test(message.trim());
 }
 
 export function buildTransactionConversationState(messages: AssistantMessage[]): TransactionConversationState {
@@ -38,7 +38,7 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
   const hasRecentLoanNarrative = recent.some(message => message.role === "user" && LOAN_EVENT.test(message.content));
   const assistantAskedForTerms = TERMS_QUESTION.test(lastAssistant) && /[?؟]/.test(lastAssistant);
   const isShortFollowup = lastUser.length <= 180 && !/[?؟]/.test(lastUser);
-  const correction = /\\b(?:actually|correction|instead|change|correct|mali|palitan|palit|ang ibig kong sabihin|dapat)\\b/i.test(lastUser);
+  const correction = /\b(?:actually|correction|instead|change|correct|mali|palitan|palit|ang ibig kong sabihin|dapat)\b/i.test(lastUser);
 
   if (hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && correction) {
     return {
