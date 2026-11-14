@@ -32,6 +32,7 @@ Supported action types:
 - `record_payment`
 - `update_borrower`
 - `archive_borrower` (soft archive; history is retained)
+- `update_loan_terms` (change stored interest settings on an active loan)
 
 Example borrower preparation:
 
@@ -104,8 +105,8 @@ The Pages project uses a Pages Function at `/api/*` to forward same-origin reque
 
 - The mobile-first dashboard, borrower/loan/payment views, borrower/loan/payment create forms, AI chat panel, browser voice input/output foundation, owner login screen, and explicit AI proposal review are in the frontend.
 - The API supports owner sessions, read-only collections, AI responses, confirmed create-borrower/create-loan/record-payment actions, and audited borrower updates/soft archives.
-- Borrower update/archive workflows are available; loan-term edits, loan closure workflows, configurable repayment schedules, and borrower/loan detail pages still need implementation. On-demand recorded-payment reports are available. The Activity screen reads confirmed audit entries.
+- Borrower update/archive workflows are available; loan closure workflows, configurable repayment schedules, and borrower/loan detail pages still need implementation. Active loan interest terms can be edited through owner confirmation. On-demand recorded-payment reports are available. The Activity screen reads confirmed audit entries.
 - No interest accrual, total payoff, principal allocation, penalties, or due-date calculations are exposed. Do not treat principal less total payments as a real balance until allocation rules are agreed.
 - Session cookies are Secure and intended for HTTPS. Production deployment must use same-origin frontend/API routing.
 - No Cloudflare resource IDs, secrets, database migrations, or deployment configuration have been applied. Do that only after GitHub implementation and CI are complete.
-- Apply database migrations in order before deploying the Worker, including `0003_borrower_maintenance_actions.sql`.
+- Apply database migrations in order before deploying the Worker, including `0003_borrower_maintenance_actions.sql` and `0004_loan_terms_action.sql`.
