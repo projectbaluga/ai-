@@ -3,7 +3,7 @@ import { borrowerFormMarkup, loanFormMarkup, paymentFormMarkup, bindRecordForms 
 import { reportsMarkup, bindReports } from "./reports";
 
 type Borrower = { id: string; full_name: string; phone?: string | null; notes?: string | null };
-type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string };
+type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string; interest_type: string; interest_value: number; interest_period: string };
 type Payment = { id: string; loan_id: string; amount_minor: number; paid_at: string };
 type AuditEntry = { id: string; action: string; entity_type: string; entity_id: string; created_at: string };
 type ApiList<T> = { results: T[] };
@@ -87,7 +87,7 @@ function renderPage() {
   } else if (state.page === "borrowers") {
     target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">PEOPLE YOU LEND TO</p><h1>Borrowers</h1><p class="muted">Manage borrower details and find records with your AI assistant.</p></div></div><section class="list-card">${state.connected && state.borrowers.length ? state.borrowers.map(b => `<div class="record-row"><span class="record-avatar">${escapeHtml(b.full_name.slice(0,1).toUpperCase())}</span><div><strong>${escapeHtml(b.full_name)}</strong><small>${escapeHtml(b.phone ?? "No phone number")}</small></div><div class="record-actions"><button type="button" data-edit-borrower="${escapeHtml(b.id)}">Edit</button><button type="button" data-archive-borrower="${escapeHtml(b.id)}">Archive</button></div></div>`).join("") : empty("Borrower records will appear here after secure owner login.")}</section>`;
   } else if (state.page === "loans") {
-    target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">LENDING PORTFOLIO</p><h1>Loans</h1><p class="muted">Review principal amounts and loan status.</p></div></div><section class="list-card">${state.connected && state.loans.length ? state.loans.map(l => `<div class="record-row"><span class="record-avatar loan-avatar">₱</span><div><strong>${peso(l.principal_minor)}</strong><small>${escapeHtml(l.currency)} · ${escapeHtml(l.status)}</small></div><span class="status-tag">${escapeHtml(l.status)}</span></div>`).join("") : empty("Loan records will appear here after secure owner login.")}</section>`;
+    target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">LENDING PORTFOLIO</p><h1>Loans</h1><p class="muted">Review principal amounts and loan status.</p></div></div><section class="list-card">${state.connected && state.loans.length ? state.loans.map(l => `<div class="record-row"><span class="record-avatar loan-avatar">₱</span><div><strong>${peso(l.principal_minor)}</strong><small>${escapeHtml(l.currency)} · ${escapeHtml(l.status)} · ${escapeHtml(l.interest_type)} interest</small></div><span class="status-tag">${escapeHtml(l.status)}</span><button type="button" data-edit-loan="${escapeHtml(l.id)}">Edit terms</button></div>`).join("") : empty("Loan records will appear here after secure owner login.")}</section>`;
   } else if (state.page === "reports") {
     target.innerHTML = reportsMarkup();
     bindReports(target);
@@ -97,7 +97,7 @@ function renderPage() {
   }
   if (state.page === "borrowers") {
     target.insertAdjacentHTML("afterbegin", borrowerFormMarkup());
-    bindRecordForms(target, loadData, state.borrowers);
+    bindRecordForms(target, loadData, state.borrowers, state.loans);
   }
   if (state.page === "loans") {
     target.insertAdjacentHTML("afterbegin", loanFormMarkup(state.borrowers) + paymentFormMarkup(state.loans, state.borrowers));
