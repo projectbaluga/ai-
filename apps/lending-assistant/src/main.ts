@@ -155,6 +155,17 @@ function bindShell() {
   document.querySelector("#logout-button")?.addEventListener("click", logout);
   document.querySelector("#assistant-close")?.addEventListener("click", closeAssistant);
   document.querySelector<HTMLFormElement>("#chat-form")?.addEventListener("submit", sendMessage);
+  const chatInput = document.querySelector<HTMLTextAreaElement>("#chat-input");
+  chatInput?.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      document.querySelector<HTMLFormElement>("#chat-form")?.requestSubmit();
+    }
+  });
+  chatInput?.addEventListener("input", () => {
+    chatInput.style.height = "auto";
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 180) + "px";
+  });
   document.querySelector<HTMLButtonElement>("#voice-btn")?.addEventListener("click", toggleVoice);
   document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach(b => b.addEventListener("click", () => { const input = document.querySelector<HTMLTextAreaElement>("#chat-input"); if (input) { input.value = b.dataset.prompt ?? ""; input.focus(); } }));
 }
@@ -675,12 +686,23 @@ async function sendMessage(event: SubmitEvent) {
     state.actionBusy = false;
   }
   addMessage("user", content);
-  if (input) input.value = "";
+  if (input) { input.value = ""; input.style.height = ""; }
   if (!state.connected) {
     addMessage("assistant", "Salamat! Naka-ready ang assistant interface, pero kailangan munang ma-configure ang secure owner login bago ako makabasa ng private lending records o makagamit ng AI service. Walang transaction na ginawa.");
     return;
   }
   state.busy = true;
+  const sendButton = document.querySelector<HTMLButtonElement>("#chat-form .send-btn");
+  const assistantStatus = document.querySelector<HTMLElement>("#assistant-status");
+  const messageList = document.querySelector<HTMLElement>("#chat-messages");
+  const thinking = document.createElement("div");
+  thinking.className = "message-bubble assistant typing-indicator";
+  thinking.textContent = "Thinking through your request…";
+  thinking.setAttribute("aria-label", "The assistant is preparing a response");
+  messageList?.appendChild(thinking);
+  if (sendButton) { sendButton.disabled = true; sendButton.textContent = "…"; }
+  if (assistantStatus) assistantStatus.textContent = "Working on your request…";
+  if (messageList) messageList.scrollTop = messageList.scrollHeight;
   try {
     const response = await fetch("/api/assistant", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -693,7 +715,12 @@ async function sendMessage(event: SubmitEvent) {
     if (data.proposedActions?.length) data.proposedActions.forEach(renderProposal);
   } catch (error) {
     addMessage("assistant", error instanceof Error ? error.message : "Hindi muna available ang assistant. Walang na-save na transaction.");
-  } finally { state.busy = false; }
+  } finally {
+    thinking.remove();
+    if (sendButton) { sendButton.disabled = false; sendButton.textContent = "↑"; }
+    if (assistantStatus) assistantStatus.textContent = "Ready to help · English / Tagalog";
+    state.busy = false;
+  }
 }
 
 type SpeechRecognitionLike = {
