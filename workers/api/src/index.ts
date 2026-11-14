@@ -365,6 +365,15 @@ export default {
     const confirmMatch = url.pathname.match(/^\/api\/actions\/([0-9a-f-]+)\/confirm$/i);
     if (request.method === "POST" && confirmMatch) return confirmAction(confirmMatch[1], env);
 
+    if (request.method === "GET" && url.pathname === "/api/reports/payments") {
+      const from = url.searchParams.get("from") ?? "";
+      const to = url.searchParams.get("to") ?? "";
+      const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value + "T00:00:00Z")) && new Date(value + "T00:00:00Z").toISOString().slice(0, 10) === value;
+      if (!validDate(from) || !validDate(to) || from > to) return json({ error: "Provide a valid date range using YYYY-MM-DD." }, 400);
+      const rows = await env.DB.prepare("SELECT date(paid_at) AS day, COUNT(*) AS payment_count, COALESCE(SUM(amount_minor), 0) AS total_minor FROM payments WHERE date(paid_at) >= date(?) AND date(paid_at) <= date(?) GROUP BY date(paid_at) ORDER BY day").bind(from, to).all<{ day: string; payment_count: number; total_minor: number }>();
+      const daily = rows.results ?? [];
+      return json({ from, to, paymentCount: daily.reduce((sum, row) => sum + row.payment_count, 0), totalMinor: daily.reduce((sum, row) => sum + row.total_minor, 0), byDay: daily });
+    }
     const collections: Record<string, string> = {
       "/api/borrowers": "SELECT id, full_name, phone, notes, created_at, updated_at FROM borrowers WHERE archived_at IS NULL ORDER BY full_name",
       "/api/loans": "SELECT id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, status, notes, created_at FROM loans ORDER BY created_at DESC",
