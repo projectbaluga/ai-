@@ -508,10 +508,14 @@ export function extractExplicitRepaymentFrequency(messages: AssistantMessage[]):
   const lastUserTurn = [...messages].reverse().find(message => message.role === "user")?.content ?? "";
   const lastAssistantTurn = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
   const assistantAskedRepayment = /repayment|payment schedule|paraan ng bayad|schedule ng bayad|hulog|bayaran/i.test(lastAssistantTurn);
-  return /(?:weekly payments|weekly hulog|kada linggo ang hulog|lingguhan ang bayad)/i.test(userText) ? "weekly" :
-    /(?:daily payments|daily hulog|araw-araw ang hulog|kada araw ang bayad)/i.test(userText) ? "daily" :
-    /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ? "biweekly" :
-    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ? "monthly" :
+  return /(?:weekly payments|weekly hulog|kada linggo ang hulog|lingguhan ang bayad)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:weekly|lingguhan|kada linggo)\b/i.test(lastUserTurn) ? "weekly" :
+    /(?:daily payments|daily hulog|araw-araw ang hulog|kada araw ang bayad)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:daily|araw-araw|kada araw)\b/i.test(lastUserTurn) ? "daily" :
+    /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:biweekly|every two weeks|kada dalawang linggo)\b/i.test(lastUserTurn) ? "biweekly" :
+    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:monthly|buwanan|buwan-buwan|kada buwan)\b/i.test(lastUserTurn) ? "monthly" :
     assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment)/i.test(lastUserTurn) ? "one_time" :
     /(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|buo ang bayad|full payment)/i.test(userText) ? "one_time" :
     null;
