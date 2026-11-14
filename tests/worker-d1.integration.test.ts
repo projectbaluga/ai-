@@ -52,7 +52,8 @@ describe("Worker D1 transaction integration", () => {
   beforeEach(async () => {
     await db.batch([
       db.prepare("DROP TRIGGER IF EXISTS force_audit_failure"),
-      db.prepare("DELETE FROM payments"),\n      db.prepare("DELETE FROM login_rate_limits"),
+      db.prepare("DELETE FROM payments"),
+      db.prepare("DELETE FROM login_rate_limits"),
       db.prepare("DELETE FROM audit_log"),
       db.prepare("DELETE FROM pending_actions"),
       db.prepare("DELETE FROM loans"),
