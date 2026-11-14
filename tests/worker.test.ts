@@ -552,7 +552,7 @@ describe("API worker", () => {
           { role: "user", content: "5% one-time interest" },
           { role: "assistant", content: "Ire-record ko ang 5% one-time interest." },
           { role: "user", content: "Walang interest" },
-          { role: "assistant", content: "Sige, walang interest." },
+          { role: "assistant", content: "Kung tama na ang detalye, sabihin save para maitala ang loan." },
           { role: "user", content: "save" }
         ] })
       }), env);
