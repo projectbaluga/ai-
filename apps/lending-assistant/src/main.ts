@@ -408,19 +408,10 @@ function showDeleteAllPasswordModal(notice: HTMLElement) {
       notice.textContent = "Deletion completed. " + result.deleted!.borrowers + " borrower(s), " + result.deleted!.loans + " loan(s), and " + result.deleted!.payments + " payment(s) deleted. Audit history retained.";
       await loadData();
       addMessage("assistant", "Na-delete ang lending records matapos ma-verify ang owner password. Napanatili ang audit history.");
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("Incorrect owner password")) {
-        if (error) { /* keep the modal open for another attempt */ }
-      }
-      if (error) {
-        const message = error instanceof Error ? error.message : "Deletion failed. No success was reported.";
-        if (message.includes("Incorrect owner password")) {
-          if (password) password.value = "";
-          if (error) error.textContent = message;
-        } else if (error instanceof Error && error.message) {
-          if (error) error.textContent = message;
-        }
-      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Deletion failed. No success was reported.";
+      if (message.includes("Incorrect owner password") && password) password.value = "";
+      if (error) error.textContent = message;
       button.disabled = false;
       button.textContent = "Verify password and delete";
       password?.focus();
