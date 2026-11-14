@@ -90,7 +90,7 @@ All require owner authentication. These endpoints return stored records and do n
 
 ## AI assistant
 
-`POST /api/assistant` requires owner authentication and accepts 1–20 conversation messages (each up to 4,000 characters). Optional `language` may be `en`, `tl`, or `tl-en`.
+`POST /api/assistant` requires owner authentication and accepts 1–20 conversation messages (each up to 4,000 characters, with a combined limit of 12,000 characters). Optional `language` may be `en`, `tl`, or `tl-en`.
 
 The response contains `intent`, `message`, `proposedActions`, and `needsClarification`. Every proposal must include `requiresConfirmation: true`. The AI endpoint does not write to D1. Model output is untrusted and must pass through the normal prepare/confirm flow. The frontend now presents proposal details and requires a separate owner confirmation before saving.
 
