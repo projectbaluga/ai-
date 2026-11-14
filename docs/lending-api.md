@@ -103,7 +103,7 @@ The Pages project uses a Pages Function at `/api/*` to forward same-origin reque
 
 ## Database integration tests
 
-The test suite uses Cloudflare's Workers Vitest integration and an isolated local D1 database. It applies every SQL migration in `database/migrations` before the D1 integration tests. The integration coverage exercises confirmed borrower creation, duplicate concurrent confirmation, rollback when the audit insert fails, payment recording, the latest loan-terms migration, and AI targeted search for a borrower outside the initial 30-record context sample. These tests run locally in Miniflare through GitHub Actions; they do not connect to or modify a production Cloudflare D1 database.
+The test suite uses Cloudflare's Workers Vitest integration and an isolated local D1 database. It applies every SQL migration in `database/migrations` before the D1 integration tests. The integration coverage exercises confirmed borrower creation, duplicate concurrent confirmation, rollback when the audit insert fails, payment recording, the latest loan-terms migration, AI targeted search for a borrower outside the initial 30-record context sample, and resolving a short follow-up using a borrower name from an earlier message. These tests run locally in Miniflare through GitHub Actions; they do not connect to or modify a production Cloudflare D1 database.
 
 ## Current implementation boundaries
 
