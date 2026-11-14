@@ -19,7 +19,7 @@ export async function runLendingAssistantModel(
       { role: "system", content: systemPrompt },
       ...messages
     ],
-    max_tokens: 480,
+    max_tokens: 1200,
     temperature: 0.35
   });
 }
