@@ -37,6 +37,13 @@ async function confirm(actionId: string) {
   }), testEnv);
 }
 
+async function cancel(actionId: string) {
+  return worker.fetch(new Request(`https://integration.test/api/actions/${actionId}/cancel`, {
+    method: "POST",
+    headers
+  }), testEnv);
+}
+
 async function seedBorrowerAndLoan() {
   const borrowerId = crypto.randomUUID();
   const loanId = crypto.randomUUID();
@@ -99,6 +106,43 @@ describe("Worker D1 transaction integration", () => {
     expect(borrower?.full_name).toBe("Atomic Borrower");
     expect(audit?.count).toBe(1);
     expect(pending).toEqual({ status: "confirmed", result_entity_id: result.entityId });
+  });
+
+  it("cancels a pending action and prevents it from being confirmed", async () => {
+    const { actionId } = await prepare("create_borrower", { fullName: "Cancelled Borrower" });
+    const response = await cancel(actionId);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ actionId, status: "cancelled" });
+    expect((await confirm(actionId)).status).toBe(409);
+
+    const borrowerCount = await db.prepare("SELECT COUNT(*) AS count FROM borrowers WHERE full_name = ?")
+      .bind("Cancelled Borrower").first<{ count: number }>();
+    const pending = await db.prepare("SELECT status FROM pending_actions WHERE id = ?")
+      .bind(actionId).first<{ status: string }>();
+    const audit = await db.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'cancel_pending_action' AND entity_id = ?")
+      .bind(actionId).first<{ count: number }>();
+    expect(borrowerCount?.count).toBe(0);
+    expect(pending?.status).toBe("rejected");
+    expect(audit?.count).toBe(1);
+  });
+
+  it("expires an unreviewed action instead of allowing stale approval", async () => {
+    const { actionId } = await prepare("create_borrower", { fullName: "Expired Borrower" });
+    await db.prepare("UPDATE pending_actions SET expires_at = datetime('now', '-1 minute') WHERE id = ?")
+      .bind(actionId).run();
+
+    const response = await cancel(actionId);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ status: "expired" });
+    expect((await confirm(actionId)).status).toBe(409);
+
+    const borrowerCount = await db.prepare("SELECT COUNT(*) AS count FROM borrowers WHERE full_name = ?")
+      .bind("Expired Borrower").first<{ count: number }>();
+    const pending = await db.prepare("SELECT status FROM pending_actions WHERE id = ?")
+      .bind(actionId).first<{ status: string }>();
+    expect(borrowerCount?.count).toBe(0);
+    expect(pending?.status).toBe("rejected");
   });
 
   it("allows only one winner when the same action is confirmed concurrently", async () => {
