@@ -76,7 +76,7 @@ function renderPage() {
     target.innerHTML = `
       <div class="page-intro"><div><p class="eyebrow">YOUR LENDING AT A GLANCE</p><h1>Good day.</h1><p class="muted">Here’s what’s happening in your lending workspace.</p></div><span class="date-pill">${new Intl.DateTimeFormat("en-PH",{dateStyle:"full"}).format(new Date())}</span></div>
       <div class="stat-grid">
-        <article class="stat-card"><span class="stat-icon violet">₱</span><span class="stat-label">Outstanding balance</span><strong>${state.connected ? "—" : "Not available"}</strong><small>Requires verified balance calculation</small></article>
+        <article class="stat-card"><span class="stat-icon violet">₱</span><span class="stat-label">Outstanding balance</span><strong>${state.connected ? "Not calculated" : "—"}</strong><small>Interest and payment allocation rules pending</small></article>
         <article class="stat-card"><span class="stat-icon blue">▤</span><span class="stat-label">Active loans</span><strong>${state.connected ? active : "—"}</strong><small>${state.connected ? "Current active loan records" : "Connect your secure account"}</small></article>
         <article class="stat-card"><span class="stat-icon green">♙</span><span class="stat-label">Borrowers</span><strong>${state.connected ? borrowerCount : "—"}</strong><small>${state.connected ? "Active borrower records" : "No figures shown until connected"}</small></article>
         <article class="stat-card"><span class="stat-icon amber">↗</span><span class="stat-label">Payments received</span><strong>${state.connected ? peso(paymentTotal) : "—"}</strong><small>${state.connected ? "Recorded payments total" : "Verified records only"}</small></article>
