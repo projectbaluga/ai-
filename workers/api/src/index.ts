@@ -408,6 +408,16 @@ function isRecordLookupRequest(message: string): boolean {
   return /\b(?:find|search|show|list|view|look\s*up|get|check|hanapin|pakita|ipakita|sino|nasaan|overview|summary|recent\s+payments|active\s+loans|borrower|borrowers|loan\s+records|payment\s+records)\b/i.test(message);
 }
 
+export function isLendingOverviewRequest(message: string): boolean {
+  return /\b(?:lending\s+overview|loan\s+overview|overview\s+of\s+(?:my\s+)?(?:lending|loans)|show\s+(?:my\s+)?(?:lending|loan)\s+overview)\b/i.test(message);
+}
+
+export function removeInterestClarificationFromOverview(message: string): string {
+  return message
+    .replace(/(?:\s*|[\\r\\n]+)(?:ano(?:\s+po)?\s+ang\s+napagkasunduan\s+niny[o]?\s+sa\s+interest|what\s+was\s+agreed\s+about\s+interest)\s*\\??\s*$/i, "")
+    .trim();
+}
+
 
 function searchTermsFromMessages(messages: AssistantMessage[]): string[] {
   const ignored = new Set([
@@ -665,6 +675,9 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
         });
       }
       return json({ error: "AI assistant could not format a response. Please try again.", requestId }, 502);
+    }
+    if (isLendingOverviewRequest(lastUserMessage) && parsed.intent === "answer_question" && parsed.proposedActions.length === 0) {
+      parsed.message = removeInterestClarificationFromOverview(parsed.message);
     }
     return json(parsed);
   } catch (error) {
