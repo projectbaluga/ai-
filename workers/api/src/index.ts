@@ -564,9 +564,14 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       }
     }
 
+    const verifiedLoanProposal = isPotentialWriteRequest(messages)
+      ? buildVerifiedLoanProposal(messages, recordContext)
+      : null;
+    if (verifiedLoanProposal && (!parsed || parsed.proposedActions.length === 0 && parsed.needsClarification)) {
+      return json(verifiedLoanProposal);
+    }
+
     if (!parsed) {
-      const verifiedLoanProposal = buildVerifiedLoanProposal(messages, recordContext);
-      if (verifiedLoanProposal) return json(verifiedLoanProposal);
       console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, ...modelOutputDiagnostics(diagnosticOutput) }));
       if (isPotentialWriteRequest(messages)) {
         return json({
