@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import worker, { buildFinancialLookupReply, buildVerifiedLoanProposal, isLendingOverviewRequest, isRecordLookupRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
+import worker, { buildFinancialLookupReply, buildVerifiedLoanProposal, extractExplicitRepaymentFrequency, isLendingOverviewRequest, isRecordLookupRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
 import { buildLendingAssistantSystemPrompt } from "../workers/api/src/lending-assistant-prompt";
 
 let loginAttempts = 0;
@@ -47,6 +47,63 @@ describe("API worker", () => {
     expect(reply?.message).not.toContain("₱1,100");
   });
 
+  it("does not let a model-generated one-time repayment default override the conversation", async () => {
+    const originalDb = env.DB;
+    env.DB = {
+      prepare: (sql: string) => ({
+        bind: (..._values: unknown[]) => ({
+          all: async () => ({ results: [] }),
+          first: async () => null,
+          run: async () => ({ success: true })
+        }),
+        all: async () => ({
+          results: sql.includes("SELECT id, full_name, phone FROM borrowers")
+            ? [{ id: "borrower-wilson", full_name: "Wilson Villanueva", phone: null }]
+            : []
+        }),
+        first: async () => null,
+        run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    const modelProposal = {
+      intent: "prepare_action",
+      message: "Ready to save the loan.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerId: "borrower-wilson", principalMinor: 100000, currency: "PHP",
+          interestType: "percentage", interestValue: 10, interestPeriod: "one_time",
+          interestFrequency: "one_time", repaymentFrequency: "one_time"
+        },
+        summary: "Save Wilson's loan",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    env.AI.run.mockImplementationOnce(async () => ({ response: JSON.stringify(modelProposal) }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [
+          { role: "user", content: "nagpautang ako kay Wilson Villanueva nang 1000 pesos" },
+          { role: "assistant", content: "May interest po ba?" },
+          { role: "user", content: "10% one-time interest" },
+          { role: "assistant", content: "Please confirm and save the loan after specifying the repayment schedule?" },
+          { role: "user", content: "save" }
+        ] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "request_clarification",
+        proposedActions: [],
+        needsClarification: true
+      });
+    } finally {
+      env.DB = originalDb;
+    }
+  });
+
   it("requires an explicit repayment answer and never treats one-time interest as one-time repayment", () => {
     const context = {
       available: true,
@@ -59,6 +116,13 @@ describe("API worker", () => {
       { role: "assistant", content: "Ano po ang repayment schedule?" },
       { role: "user", content: "save" }
     ], context);
+    expect(extractExplicitRepaymentFrequency([
+      { role: "user", content: "pinautang ko si Wilson Villanueva nang 1000 pesos" },
+      { role: "assistant", content: "May interest po ba?" },
+      { role: "user", content: "10% one-time interest" },
+      { role: "assistant", content: "Ano po ang repayment schedule?" },
+      { role: "user", content: "save" }
+    ])).toBeNull();
     expect(noSchedule).toMatchObject({
       intent: "request_clarification",
       proposedActions: [],
