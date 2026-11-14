@@ -54,13 +54,14 @@ The Lending Assistant will use the shared AI contracts but keep lending-specific
 
 - [x] Provider-neutral AI request/response contracts added.
 - [x] Lending API has a prepare-then-confirm transaction pattern.
-- [ ] Connect a real AI provider through a server-side adapter.
-- [ ] Add app-specific AI tools with strict schemas and permission checks.
+- [x] Connect Cloudflare Workers AI through a dedicated server-side provider adapter (`@cf/meta/llama-3.1-8b-instruct`).
+- [x] Keep lending-specific behavior in a versioned, dedicated system prompt with explicit ambiguity handling and safety boundaries.
+- [ ] Expand app-specific read tools and strict action schemas; all writes remain behind backend validation and owner confirmation.
 - [x] Add AI-first chat UI, voice input/output foundation, and context-driven borrower/loan/payment panels.
 - [x] Add an AI conversation entry point to the on-demand payment report panel.
 - [ ] Add richer dynamic report and detail panels with filter controls and preserved conversation context.
 - [ ] Replace remaining prompt-based and legacy static workflows with guided AI proposals.
-- [ ] Add evaluation and safety tests for English, Tagalog, and Taglish.
+- [ ] Add broader evaluation and safety tests for English, Tagalog, and Taglish, including ambiguous duplicate-name scenarios.
 - [ ] Define lending interest and payment-allocation rules before calculations.
 - [ ] Configure and test deployment and production security.
 
