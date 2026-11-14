@@ -512,7 +512,9 @@ describe("API worker", () => {
         body: JSON.stringify({ messages: [
           { role: "user", content: "nagpautang ako nang 1000 pesos kay Allan Lobrigo ngayon araw at nais nya na bayaran ito next month at napagka-sunduan namin na may 5% interest" },
           { role: "assistant", content: "Ano po ang interest type: one-time o monthly?" },
-          { role: "user", content: "one-time lang po" }
+          { role: "user", content: "one-time lang po" },
+          { role: "assistant", content: "Ano po ang repayment schedule?" },
+          { role: "user", content: "one-time payment" }
         ] })
       }), env);
       expect(response.status).toBe(200);
@@ -561,7 +563,9 @@ describe("API worker", () => {
         body: JSON.stringify({ messages: [
           { role: "user", content: "nagpautang ako nang 1000 pesos kay Allan Lobrigo" },
           { role: "assistant", content: "May interest po ba?" },
-          { role: "user", content: "May interest na 5% one-time." }
+          { role: "user", content: "May interest na 5% one-time." },
+          { role: "assistant", content: "Ano po ang repayment schedule?" },
+          { role: "user", content: "isang bayaran" }
         ] })
       }), env);
       expect(response.status).toBe(200);
@@ -612,6 +616,8 @@ describe("API worker", () => {
           { role: "user", content: "5% one-time interest" },
           { role: "assistant", content: "Ire-record ko ang 5% one-time interest." },
           { role: "user", content: "Walang interest" },
+          { role: "assistant", content: "Ano po ang repayment schedule?" },
+          { role: "user", content: "isang bayaran" },
           { role: "assistant", content: "Kung tama na ang detalye, sabihin save para maitala ang loan." },
           { role: "user", content: "save" }
         ] })
