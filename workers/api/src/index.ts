@@ -397,6 +397,68 @@ async function findTargetedRecords(db: D1Database, messages: AssistantMessage[])
   };
 }
 
+function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: JsonObject): AssistantResponse | null {
+  if (recordContext.available !== true || !Array.isArray(recordContext.borrowers)) return null;
+  const userText = messages.filter(message => message.role === "user").map(message => message.content).join("\\n");
+  const hasLoanEvent = /\\b(?:nagpautang|pinautang|pinahiram|nangutang|borrowed|lent|loaned|lend)\\b/i.test(userText);
+  if (!hasLoanEvent) return null;
+
+  const borrowers = recordContext.borrowers.filter((value): value is { id: string; full_name: string } =>
+    isRecord(value) && text(value.id, 80) && text(value.full_name, 160)
+  );
+  const normalize = (value: string) => value.toLocaleLowerCase().normalize("NFD")
+    .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const normalizedText = normalize(userText);
+  const matches = borrowers.filter(borrower => {
+    const name = normalize(borrower.full_name);
+    return name.length > 0 && (" " + normalizedText + " ").includes(" " + name + " ");
+  });
+  if (matches.length !== 1) return null;
+
+  const amountMatch = userText.match(/\\b(?:nagpautang|pinautang|pinahiram|nangutang|borrowed|lent|loaned|lend)\\b[\\s\\S]{0,120}?(?:ng|nang|for|of)?\\s*(?:₱|php)?\\s*([\\d,]+(?:\\.\\d{1,2})?)\\s*(?:pesos?|php)?/i);
+  if (!amountMatch) return null;
+  const principal = Number(amountMatch[1].replace(/,/g, ""));
+  const principalMinor = Math.round(principal * 100);
+  if (!Number.isFinite(principal) || principal <= 0 || !Number.isSafeInteger(principalMinor)) return null;
+
+  const interestMatch = userText.match(/(\\d+(?:\\.\\d+)?)\\s*%/);
+  if (!interestMatch) return null;
+  const interestValue = Number(interestMatch[1]);
+  if (!Number.isFinite(interestValue) || interestValue < 0) return null;
+
+  const oneTime = /\\b(?:one[- ]?time|one[- ]off|isang beses|isang hulog)\\b/i.test(userText);
+  const monthly = /\\b(?:monthly|buwan(?:an)?|kada buwan)\\b/i.test(userText);
+  if (oneTime === monthly) return null;
+
+  const borrower = matches[0];
+  const repaymentTimingMentioned = /\\b(?:next month|sa susunod na buwan|next week|bukas|tomorrow|within a week)\\b/i.test(userText);
+  const message = "Nakuha ko na po ang detalye. Ihahanda ko ang loan para kay " + borrower.full_name +
+    ": ₱" + principal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+    " principal, " + interestValue + "% " + (oneTime ? "one-time interest" : "monthly interest") +
+    (repaymentTimingMentioned ? ". Paalala: hindi pa nase-save ng app ang 'next month' bilang due date." : "") +
+    " Pakireview ang proposal bago i-save.";
+  return {
+    intent: "prepare_action",
+    message,
+    proposedActions: [{
+      type: "create_loan",
+      payload: {
+        borrowerId: borrower.id,
+        principalMinor,
+        currency: "PHP",
+        interestType: "percentage",
+        interestValue,
+        interestPeriod: oneTime ? "one_time" : "monthly"
+      },
+      summary: "Gumawa ng loan record para kay " + borrower.full_name + " na may principal na ₱" +
+        principal.toLocaleString("en-PH", { maximumFractionDigits: 2 }) + " at " + interestValue + "% " +
+        (oneTime ? "one-time interest" : "monthly interest"),
+      requiresConfirmation: true
+    }],
+    needsClarification: false
+  };
+}
+
 async function assistantReply(request: Request, env: Env): Promise<Response> {
   if (!env.AI) return json({ error: "AI service is not configured." }, 503);
   const body = await readJson(request);
@@ -503,6 +565,8 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     }
 
     if (!parsed) {
+      const verifiedLoanProposal = buildVerifiedLoanProposal(messages, recordContext);
+      if (verifiedLoanProposal) return json(verifiedLoanProposal);
       console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, ...modelOutputDiagnostics(diagnosticOutput) }));
       if (isPotentialWriteRequest(messages)) {
         return json({
