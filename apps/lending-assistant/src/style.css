@@ -10,3 +10,5 @@
 .report-summary{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}.report-summary>div{background:#f7f7fc;border:1px solid #ececf6;border-radius:12px;padding:15px}.report-summary small,.report-summary strong{display:block}.report-summary small{font-size:10px;color:#8d97a9}.report-summary strong{font:800 20px Manrope;color:#303b54;margin-top:6px}.report-subtitle{font:700 13px Manrope;color:#354158;margin:20px 0 10px}.report-daily{border:1px solid #edf0f5;border-radius:12px;overflow:hidden}.report-daily .activity-row{background:#fff}@media(max-width:700px){.side-nav{overflow-x:auto}.nav-item{min-width:58px}.report-summary strong{font-size:17px}}
 
 .record-actions{display:flex;gap:6px}.record-actions button{border:1px solid #e7e9f0;background:#fff;color:#68748b;border-radius:7px;padding:6px 8px;font-size:9px;font-weight:700}.record-actions button:last-child{color:#b35a64}@media(max-width:430px){.record-actions{flex-direction:column}.record-actions button{padding:5px 6px}}
+
+.record-row>button{border:1px solid #e7e9f0;background:#fff;color:#655ed2;border-radius:7px;padding:6px 8px;font-size:9px;font-weight:700}
