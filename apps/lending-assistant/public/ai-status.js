@@ -40,14 +40,15 @@
     }
     const indicator = document.querySelector("#ai-service-indicator");
     if (indicator) {
-      indicator.textContent = labels[status];
-      indicator.className = "ai-service-indicator " + status;
-      indicator.title = detail;
+      if (indicator.textContent !== labels[status]) indicator.textContent = labels[status];
+      const nextClass = "ai-service-indicator " + status;
+      if (indicator.className !== nextClass) indicator.className = nextClass;
+      if (indicator.title !== detail) indicator.title = detail;
     }
     const panelStatus = document.querySelector("#assistant-status");
     if (panelStatus) {
-      panelStatus.textContent = descriptions[status];
-      panelStatus.dataset.aiStatus = status;
+      if (panelStatus.textContent !== descriptions[status]) panelStatus.textContent = descriptions[status];
+      if (panelStatus.dataset.aiStatus !== status) panelStatus.dataset.aiStatus = status;
     }
   }
 
