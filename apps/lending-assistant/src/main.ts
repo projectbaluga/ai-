@@ -90,6 +90,14 @@ function renderPage() {
     const rows = state.activity.map(a => "<div class=\"record-row\"><span class=\"record-avatar loan-avatar\">↻</span><div><strong>" + escapeHtml(a.action.replaceAll("_", " ")) + " · " + escapeHtml(a.entity_type) + "</strong><small>" + new Date(a.created_at).toLocaleString("en-PH") + " · Ref: " + escapeHtml(a.entity_id.slice(0,8)) + "</small></div></div>").join("");
     target.innerHTML = "<div class=\"page-intro\"><div><p class=\"eyebrow\">AUDIT TRAIL</p><h1>Activity</h1><p class=\"muted\">Confirmed changes recorded by the system.</p></div></div><section class=\"list-card\">" + (state.connected && state.activity.length ? rows : empty("Confirmed activity will appear here after secure owner login.")) + "</section>";
   }
+  if (state.page === "borrowers") {
+    target.insertAdjacentHTML("afterbegin", borrowerFormMarkup());
+    bindRecordForms(target, loadData);
+  }
+  if (state.page === "loans") {
+    target.insertAdjacentHTML("afterbegin", loanFormMarkup(state.borrowers) + paymentFormMarkup(state.loans, state.borrowers));
+    bindRecordForms(target, loadData);
+  }
   target.querySelectorAll<HTMLElement>("[data-page]").forEach(el => el.addEventListener("click", () => { state.page = el.dataset.page ?? "home"; renderPage(); }));
 }
 
