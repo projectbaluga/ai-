@@ -379,7 +379,11 @@ function showDeleteAllPasswordModal(notice: HTMLElement) {
       </form>
     </section>`;
   document.body.appendChild(overlay);
-  const close = () => overlay.remove();
+  const close = () => {
+    overlay.remove();
+    const actionButton = document.querySelector<HTMLButtonElement>(".proposal-card .proposal-button");
+    if (actionButton && actionButton.textContent === "Continue to password check") actionButton.disabled = false;
+  };
   overlay.querySelector(".secure-modal-close")?.addEventListener("click", close);
   overlay.querySelector(".secure-modal-cancel")?.addEventListener("click", close);
   overlay.addEventListener("click", event => { if (event.target === overlay) close(); });

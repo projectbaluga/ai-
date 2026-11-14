@@ -713,6 +713,7 @@ export default {
           env.DB.prepare("SELECT COUNT(*) AS count FROM payments").first<{ count: number }>()
         ]);
         const counts = { borrowers: borrowers?.count ?? 0, loans: loans?.count ?? 0, payments: payments?.count ?? 0 };
+        await clearLoginRateLimit(request, env.DB);
         await env.DB.batch([
           env.DB.prepare("DELETE FROM payments"),
           env.DB.prepare("DELETE FROM loans"),
@@ -721,7 +722,6 @@ export default {
           env.DB.prepare("INSERT INTO audit_log (id, actor, action, entity_type, entity_id, details_json) VALUES (?, 'owner', 'delete_all_records', 'workspace', 'all', ?)")
             .bind(crypto.randomUUID(), JSON.stringify({ deleted: counts, auditHistoryRetained: true }))
         ]);
-        await clearLoginRateLimit(request, env.DB);
         return json({ status: "deleted", deleted: counts, auditHistoryRetained: true });
       } catch {
         return json({ error: "Bulk deletion failed. Check the records before trying again." }, 500);
