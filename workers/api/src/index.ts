@@ -49,6 +49,8 @@ function normalizeActionPayload(type: unknown, input: unknown): { type: ActionTy
   if (canonicalType === "create_borrower" || canonicalType === "update_borrower") {
     if (payload.fullName === undefined && typeof payload.name === "string") payload.fullName = payload.name;
     if (payload.phone === undefined && typeof payload.contactNumber === "string") payload.phone = payload.contactNumber;
+    delete payload.name;
+    delete payload.contactNumber;
   }
   return { type: canonicalType, payload };
 }
@@ -322,15 +324,24 @@ function looksLikeStructuredModelOutput(value: string): boolean {
   return trimmed.startsWith("{") || /^\`\`\`(?:json)?\s*\{/i.test(trimmed);
 }
 
-function isPotentialWriteRequest(message: string): boolean {
-  const normalized = message.trim();
-  // Questions and how-to requests are conversation, even when they mention
-  // loan, utang, payment, or lending terminology.
-  if (/\b(paano|how\s+(?:do\s+i|to|can\s+i)|what\s+is|what\s+are|why|when|where|explain|ipaliwanag|ano\s+ang)\b/i.test(normalized)) {
-    return false;
-  }
-  // Only explicit record-changing language should require a structured action.
-  return /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang)\s+ako|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|register\s+(?!a\b|new\b)\w+|enroll\s+(?!a\b|new\b)\w+|add\s+.{1,80}\s+as\s+(?:a\s+)?borrower|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i.test(normalized);
+function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
+  const lastUser = [...messages].reverse().find(message => message.role === "user")?.content.trim() ?? "";
+  if (!lastUser) return false;
+  // Educational questions remain ordinary conversation even when they mention lending terms.
+  if (/\b(paano|how\s+(?:do\s+i|to|can\s+i)|what\s+is|what\s+are|why|when|where|explain|ipaliwanag|ano\s+ang)\b/i.test(lastUser)) return false;
+
+  const explicitWrite = /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang|nag[- ]?borrow|borrowed|umutang|nangutang|nag[- ]?loan|pinahiram)\s+(?:ako|si|ni|kay)?|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|register\s+(?!a\b|new\b)\w+|enroll\s+(?!a\b|new\b)\w+|add\s+.{1,80}\s+as\s+(?:a\s+)?borrower|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i;
+  if (explicitWrite.test(lastUser)) return true;
+
+  // Carry an explicit owner approval forward only when the preceding assistant turn
+  // was discussing a concrete write action; a bare "yes" must not create a record.
+  const lastAssistant = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
+  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)\b[.!\s]*$/i.test(lastUser);
+  return affirmative && /\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\b/i.test(lastAssistant);
+}
+
+function isRecordLookupRequest(message: string): boolean {
+  return /\b(?:find|search|show|list|view|look\s*up|get|check|hanapin|pakita|ipakita|sino|nasaan|overview|summary|recent\s+payments|active\s+loans|borrower|borrowers|loan\s+records|payment\s+records)\b/i.test(message);
 }
 
 
@@ -392,22 +403,31 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
 
   const language: SupportedLanguage =
     body.language === "en" || body.language === "tl" || body.language === "tl-en" ? body.language : "tl-en";
-  let recordContext: JsonObject = { available: false, note: "Verified records could not be loaded." };
-  try {
-    const [borrowerRows, loanRows, paymentRows] = await Promise.all([
-      env.DB.prepare("SELECT id, full_name FROM borrowers WHERE archived_at IS NULL ORDER BY full_name LIMIT 30").all<{ id: string; full_name: string }>(),
-      env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
-      env.DB.prepare("SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id ORDER BY p.paid_at DESC LIMIT 30").all<Record<string, unknown>>()
-    ]);
-    recordContext = { available: true, borrowers: borrowerRows.results ?? [], loans: loanRows.results ?? [], recentPayments: paymentRows.results ?? [] };
-  } catch {
-    recordContext = { available: false, note: "Verified records are temporarily unavailable. Do not guess or claim to have searched them." };
-  }
-  let targetedMatches: JsonObject = { searched: false };
-  try {
-    targetedMatches = await findTargetedRecords(env.DB, messages);
-  } catch {
-    targetedMatches = { searched: false, reason: "Targeted record search is temporarily unavailable." };
+  const lastUserMessage = messages[messages.length - 1].content;
+  const needsRecordContext = isPotentialWriteRequest(messages) || isRecordLookupRequest(lastUserMessage);
+  let recordContext: JsonObject = {
+    available: false,
+    note: needsRecordContext
+      ? "Verified record context has not been loaded. Do not guess or claim to have searched records."
+      : "No database lookup was needed for this conversational request."
+  };
+  let targetedMatches: JsonObject = { searched: false, reason: "No record lookup was needed for this conversational request." };
+  if (needsRecordContext) {
+    try {
+      const [borrowerRows, loanRows, paymentRows] = await Promise.all([
+        env.DB.prepare("SELECT id, full_name FROM borrowers WHERE archived_at IS NULL ORDER BY full_name LIMIT 30").all<{ id: string; full_name: string }>(),
+        env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id ORDER BY p.paid_at DESC LIMIT 30").all<Record<string, unknown>>()
+      ]);
+      recordContext = { available: true, borrowers: borrowerRows.results ?? [], loans: loanRows.results ?? [], recentPayments: paymentRows.results ?? [] };
+    } catch {
+      recordContext = { available: false, note: "Verified records are temporarily unavailable. Do not guess or claim to have searched them." };
+    }
+    try {
+      targetedMatches = await findTargetedRecords(env.DB, messages);
+    } catch {
+      targetedMatches = { searched: false, reason: "Targeted record search is temporarily unavailable." };
+    }
   }
   const systemPrompt = buildLendingAssistantSystemPrompt({ language, recordContext, targetedMatches });
 
@@ -421,7 +441,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     // structured schema and continue through backend validation/confirmation.
     const lastUserMessage = messages[messages.length - 1].content;
     const firstPlainText = modelTextOutput(modelResult);
-    if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(lastUserMessage)) {
+    if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(messages)) {
       return json({
         intent: "answer_question",
         message: firstPlainText,
@@ -450,7 +470,15 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
 
     if (!parsed) {
       console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, ...modelOutputDiagnostics(diagnosticOutput) }));
-      return json({ error: "AI returned a response in an unsupported format. Please try again.", requestId }, 502);
+      if (isPotentialWriteRequest(messages)) {
+        return json({
+          intent: "request_clarification",
+          message: "Pasensya na po, hindi ko naihanda nang maayos ang action kaya wala akong babaguhin sa records. Pakiulit ang request kasama ang pangalan o record details para ma-review ko ito nang tama.",
+          proposedActions: [],
+          needsClarification: true
+        });
+      }
+      return json({ error: "AI assistant could not format a response. Please try again.", requestId }, 502);
     }
     return json(parsed);
   } catch (error) {
