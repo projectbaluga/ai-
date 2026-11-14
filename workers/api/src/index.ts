@@ -195,8 +195,8 @@ function searchTermsFromMessages(messages: AssistantMessage[]): string[] {
     .slice(0, 8);
 }
 
-async function findTargetedRecords(db: D1Database, message: string): Promise<JsonObject> {
-  const terms = searchTermsFromMessage(message);
+async function findTargetedRecords(db: D1Database, messages: AssistantMessage[]): Promise<JsonObject> {
+  const terms = searchTermsFromMessages(messages);
   if (terms.length === 0) return { searched: false, reason: "No specific name or identifier was detected." };
   const predicates = terms.map(() => "instr(lower(CAST(search_value AS TEXT)), lower(?)) > 0").join(" OR ");
   const values = terms;
