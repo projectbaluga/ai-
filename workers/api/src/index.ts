@@ -32,8 +32,32 @@ const isRecord = (value: unknown): value is JsonObject =>
 const text = (value: unknown, max = 200): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= max;
 
-function validateAction(type: unknown, payload: unknown): { type: ActionType; payload: JsonObject } | null {
-  if (!isRecord(payload)) return null;
+function normalizeActionPayload(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
+  if (!isRecord(input)) return null;
+  const aliases: Record<string, ActionType> = {
+    create_borrower: "create_borrower", createBorrower: "create_borrower",
+    register_borrower: "create_borrower", registerBorrower: "create_borrower",
+    create_loan: "create_loan", createLoan: "create_loan",
+    record_payment: "record_payment", recordPayment: "record_payment",
+    update_borrower: "update_borrower", updateBorrower: "update_borrower",
+    archive_borrower: "archive_borrower", archiveBorrower: "archive_borrower",
+    update_loan_terms: "update_loan_terms", updateLoanTerms: "update_loan_terms"
+  };
+  const canonicalType = typeof type === "string" ? aliases[type] : undefined;
+  if (!canonicalType) return null;
+  const payload: JsonObject = { ...input };
+  if (canonicalType === "create_borrower" || canonicalType === "update_borrower") {
+    if (payload.fullName === undefined && typeof payload.name === "string") payload.fullName = payload.name;
+    if (payload.phone === undefined && typeof payload.contactNumber === "string") payload.phone = payload.contactNumber;
+  }
+  return { type: canonicalType, payload };
+}
+
+function validateAction(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
+  const normalized = normalizeActionPayload(type, input);
+  if (!normalized) return null;
+  type = normalized.type;
+  const payload = normalized.payload;
 
   if (type === "create_borrower") {
     if (!text(payload.fullName, 160)) return null;
@@ -41,7 +65,6 @@ function validateAction(type: unknown, payload: unknown): { type: ActionType; pa
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
     return { type, payload };
   }
-
   if (type === "create_loan") {
     if (!text(payload.borrowerId, 80)) return null;
     if (!Number.isSafeInteger(payload.principalMinor) || (payload.principalMinor as number) <= 0) return null;
@@ -53,14 +76,12 @@ function validateAction(type: unknown, payload: unknown): { type: ActionType; pa
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
     return { type, payload };
   }
-
   if (type === "update_borrower") {
     if (!text(payload.borrowerId, 80) || !text(payload.fullName, 160)) return null;
     if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
     return { type, payload };
   }
-
   if (type === "archive_borrower") {
     if (!text(payload.borrowerId, 80)) return null;
     return { type, payload };
@@ -73,7 +94,6 @@ function validateAction(type: unknown, payload: unknown): { type: ActionType; pa
     if (payload.interestType === "none" && payload.interestValue !== 0) return null;
     return { type, payload };
   }
-
   if (type === "record_payment") {
     if (!text(payload.loanId, 80)) return null;
     if (!Number.isSafeInteger(payload.amountMinor) || (payload.amountMinor as number) <= 0) return null;
@@ -81,7 +101,6 @@ function validateAction(type: unknown, payload: unknown): { type: ActionType; pa
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
     return { type, payload };
   }
-
   return null;
 }
 
@@ -261,7 +280,9 @@ export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
   for (const item of candidate.proposedActions) {
     if (!isRecord(item) || !text(item.type, 80) || !isRecord(item.payload) ||
         !text(item.summary, 1000) || item.requiresConfirmation !== true) return null;
-    proposedActions.push({ type: item.type, payload: item.payload, summary: item.summary, requiresConfirmation: true as const });
+    const validated = validateAction(item.type, item.payload);
+    if (!validated) return null;
+    proposedActions.push({ type: validated.type, payload: validated.payload, summary: item.summary, requiresConfirmation: true as const });
   }
   if (proposedActions.length > 3) return null;
   return { intent: candidate.intent as AssistantIntent, message: candidate.message, proposedActions, needsClarification: candidate.needsClarification };
@@ -309,7 +330,7 @@ function isPotentialWriteRequest(message: string): boolean {
     return false;
   }
   // Only explicit record-changing language should require a structured action.
-  return /\b(?:paki\s*(?:lista|record|save|add|create|update|archive)|(?:nagpautang|magpautang)\s+ako|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i.test(normalized);
+  return /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang)\s+ako|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i.test(normalized);
 }
 
 
