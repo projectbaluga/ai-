@@ -54,8 +54,8 @@ function shell() {
       <button class="assistant-fab" id="assistant-open" aria-label="Open AI assistant"><span>✦</span><b>Ask AI</b></button>
       <section class="assistant-panel" id="assistant-panel" aria-label="AI Lending Assistant" hidden>
         <header class="assistant-head"><div class="ai-avatar">✦</div><div><strong>AI Lending Assistant</strong><small id="assistant-status" aria-live="polite">Ready to help · English / Tagalog</small></div><button class="icon-btn" id="assistant-close" aria-label="Close assistant">×</button></header>
-        <div class="chat-messages" id="chat-messages" aria-live="polite" aria-relevant="additions text"><div class="welcome-message"><span class="welcome-spark">✦</span><h3>Kumusta! How can I help?</h3><p>Ask about your lending records, borrowers, or payments. I’ll use verified records when the secure connection is ready.</p><div class="prompt-chips"><button data-prompt="Show my lending overview">Lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Summarize recent payments">Recent payments</button></div></div></div>
-        <form class="chat-form" id="chat-form"><textarea id="chat-input" rows="1" placeholder="Type in English, Tagalog, or Taglish…" aria-label="Message the AI assistant"></textarea><div class="chat-actions"><button type="button" class="voice-btn" id="voice-btn" aria-label="Speak a message">♩ <span>Voice</span></button><span class="chat-hint">AI suggestions need your approval</span><button class="send-btn" type="submit" aria-label="Send message">↑</button></div></form>
+        <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"><div class="welcome-message"><span class="welcome-spark">✦</span><h3>Kumusta! How can I help?</h3><p>Ask about your lending records, borrowers, or payments. I’ll use verified records when the secure connection is ready.</p><div class="prompt-chips"><button data-prompt="Show my lending overview">Lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Summarize recent payments">Recent payments</button></div></div></div>
+        <form class="chat-form" id="chat-form"><textarea id="chat-input" rows="1" placeholder="Magtanong o mag-type ng message…" aria-label="Message the AI assistant" aria-describedby="chat-hint"></textarea><div class="chat-actions"><button type="button" class="voice-btn" id="voice-btn" aria-label="Speak a message">♩ <span>Voice</span></button><span class="chat-hint" id="chat-hint">Enter para mag-send · Shift+Enter para bagong linya · May approval bago mag-save</span><button class="send-btn" type="submit" aria-label="Send message">↑</button></div></form>
       </section>
     </div>`;
   renderPage();
@@ -312,7 +312,8 @@ function renderContextPanel(query: string) {
   let kind = "";
   if (has("report", "reports", "ulat", "statement", "collection summary")) kind = "reports";
   else if (paymentIdMatches.length || has("payment", "bayad", "hulog", "nabayad", "payments")) kind = "payments";
-  else if (loanIdMatches.length || has("loan", "loans", "pautang", "utang record", "active loan")) kind = "loans";
+  else if (loanIdMatches.length || has("loan", "loans", "pautang", "utang record", "active loan") ||
+    (namedBorrowers.length > 0 && /\b(?:magkano|bayarin|balance|outstanding|total\s+due|amount\s+due|how\s+much|payoff)\b/i.test(query))) kind = "loans";
   else if (has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") || namedBorrowers.length || ambiguousBorrowers.length) kind = "borrowers";
   else if (has("activity", "history", "kasaysayan", "recent activity")) kind = "activity";
   else if (has("overview", "dashboard", "summary", "kabuuan", "workspace")) kind = "overview";
@@ -341,7 +342,15 @@ function renderContextPanel(query: string) {
       (!has("active", "aktibo") || l.status === "active"));
     matches.slice(0, 12).forEach(l => {
       const borrower = state.borrowers.find(b => b.id === l.borrower_id);
-      addRow(peso(l.principal_minor) + " · " + l.status, (borrower?.full_name ?? "Borrower unavailable") + " · " + l.interest_type + " interest", "loans", l.id, "loan");
+      const cadence = l.interest_frequency ?? l.interest_period;
+      const interest = l.interest_type === "none" ? "No interest" :
+        l.interest_type === "percentage" ? String(l.interest_value) + "% · " + cadence : "Fixed interest · " + String(l.interest_value);
+      const schedule = l.repayment_frequency ? " · Repayment: " + l.repayment_frequency : "";
+      const timing = l.due_date ? " · Due " + l.due_date : l.repayment_timing_note ? " · " + l.repayment_timing_note : "";
+      const paymentRows = state.payments.filter(p => p.loan_id === l.id);
+      const recorded = paymentRows.reduce((sum, p) => sum + p.amount_minor, 0);
+      const paymentDetail = paymentRows.length ? " · " + paymentRows.length + " payment(s) recorded (" + peso(recorded) + ")" : " · No payment entry found";
+      addRow(peso(l.principal_minor) + " · " + l.status, (borrower?.full_name ?? "Borrower unavailable") + " · " + interest + schedule + timing + paymentDetail, "loans", l.id, "loan");
     });
   } else if (kind === "payments") {
     heading.textContent = "Recorded payment entries";
@@ -697,7 +706,9 @@ async function sendMessage(event: SubmitEvent) {
   const messageList = document.querySelector<HTMLElement>("#chat-messages");
   const thinking = document.createElement("div");
   thinking.className = "message-bubble assistant typing-indicator";
-  thinking.textContent = "Thinking through your request…";
+  thinking.textContent = "Sandali lang po—sinusuri ko ang request at verified records…";
+  thinking.setAttribute("role", "status");
+  thinking.setAttribute("aria-live", "polite");
   thinking.setAttribute("aria-label", "The assistant is preparing a response");
   messageList?.appendChild(thinking);
   if (sendButton) { sendButton.disabled = true; sendButton.textContent = "…"; }
@@ -710,9 +721,13 @@ async function sendMessage(event: SubmitEvent) {
     });
     const data = await response.json() as AssistantReply & { error?: string };
     if (!response.ok) throw new Error(data.error ?? "Assistant request failed.");
-    addMessage("assistant", data.message);
+    if (data.proposedActions?.length) {
+      // The proposal card is the single source of truth for a pending write.
+      data.proposedActions.forEach(renderProposal);
+    } else {
+      addMessage("assistant", data.message);
+    }
     renderContextPanel(content);
-    if (data.proposedActions?.length) data.proposedActions.forEach(renderProposal);
   } catch (error) {
     addMessage("assistant", error instanceof Error ? error.message : "Hindi muna available ang assistant. Walang na-save na transaction.");
   } finally {

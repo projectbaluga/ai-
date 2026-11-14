@@ -67,9 +67,6 @@ function normalizeActionPayload(type: unknown, input: unknown): { type: ActionTy
     if (payload.interestPeriod === undefined && typeof payload.interestFrequency === "string") {
       payload.interestPeriod = payload.interestFrequency === "monthly" ? "monthly" : "one_time";
     }
-    if (canonicalType === "create_loan" && payload.repaymentFrequency === undefined) {
-      payload.repaymentFrequency = "one_time";
-    }
   }
   return { type: canonicalType, payload };
 }
@@ -403,9 +400,9 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   return priorLoanRequest && assistantAskedForTerms && suppliesInterestTerm;
 }
 
-function isRecordLookupRequest(message: string): boolean {
+export function isRecordLookupRequest(message: string): boolean {
   if (/\b(paano|how\s+(?:do\s+i|to|can\s+i)|what\s+is|what\s+are|why|explain|ipaliwanag|ano\s+ang)\b/i.test(message)) return false;
-  return /\b(?:find|search|show|list|view|look\s*up|get|check|hanapin|pakita|ipakita|sino|nasaan|overview|summary|recent\s+payments|active\s+loans|borrower|borrowers|loan\s+records|payment\s+records)\b/i.test(message);
+  return /\b(?:find|search|show|list|view|look\s*up|get|check|hanapin|pakita|ipakita|sino|nasaan|overview|summary|recent\s+payments|active\s+loans|borrower|borrowers|loan\s+records|payment\s+records|magkano|bayarin|balance|outstanding|total\s+due|amount\s+due|principal|interest\s+amount)\b/i.test(message);
 }
 
 export function isLendingOverviewRequest(message: string): boolean {
@@ -452,7 +449,60 @@ async function findTargetedRecords(db: D1Database, messages: AssistantMessage[])
   };
 }
 
-function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: JsonObject): AssistantResponse | null {
+export function buildFinancialLookupReply(message: string, language: SupportedLanguage, targetedMatches: JsonObject): AssistantResponse | null {
+  if (!/\\b(?:magkano|bayarin|balance|outstanding|total\\s+due|amount\\s+due|how\\s+much|payoff)\\b/i.test(message)) return null;
+  if (targetedMatches.searched !== true || !Array.isArray(targetedMatches.loans)) return null;
+  const normalize = (value: string) => value.toLocaleLowerCase().normalize("NFD")
+    .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const query = normalize(message);
+  const matches = (targetedMatches.loans as unknown[]).filter((loan): loan is JsonObject =>
+    isRecord(loan) && text(loan.borrower_name, 160) && query.includes(normalize(loan.borrower_name))
+  );
+  if (!matches.length) return null;
+  const peso = (minor: number) => "₱" + (minor / 100).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const interestLabel = (loan: JsonObject) => {
+    if (loan.interest_type === "none") return "walang interest";
+    const cadence = String(loan.interest_frequency ?? loan.interest_period ?? "unspecified");
+    return loan.interest_type === "percentage"
+      ? String(loan.interest_value) + "% " + cadence + " interest"
+      : "fixed interest (stored value: " + String(loan.interest_value) + ")";
+  };
+  const english = language === "en" || /\\b(?:how much|what is the amount|outstanding balance|total due)\\b/i.test(message);
+  if (matches.length > 1) {
+    const lines = matches.slice(0, 5).map(loan =>
+      "- " + String(loan.borrower_name) + ": principal " + peso(Number(loan.principal_minor)) + ", " + interestLabel(loan)
+    );
+    return {
+      intent: "answer_question",
+      message: english
+        ? "I found more than one loan for this borrower. " + lines.join("\\n") + "\\nWhich loan do you mean?"
+        : "May higit sa isang loan record para sa borrower na ito. " + lines.join("\\n") + "\\nAling loan po ang tinutukoy ninyo?",
+      proposedActions: [], needsClarification: true
+    };
+  }
+  const loan = matches[0];
+  const principalMinor = Number(loan.principal_minor);
+  if (!Number.isSafeInteger(principalMinor) || principalMinor <= 0) return null;
+  const payments = Array.isArray(targetedMatches.payments)
+    ? (targetedMatches.payments as unknown[]).filter(payment => isRecord(payment) && payment.loan_id === loan.id)
+    : [];
+  const recordedMinor = payments.reduce((sum, payment) => sum + (isRecord(payment) && Number.isSafeInteger(payment.amount_minor) ? Number(payment.amount_minor) : 0), 0);
+  const paymentText = payments.length
+    ? (english ? "I found " + payments.length + " recorded payment(s), totaling " + peso(recordedMinor) + "." : "May " + payments.length + " recorded payment(s) na nakita, na may kabuuang " + peso(recordedMinor) + ".")
+    : (english ? "No recorded payment was found in the matching records." : "Wala akong nakitang recorded payment sa matching records.");
+  const timing = loan.due_date ? (english ? "Due date: " : "Takdang petsa: ") + String(loan.due_date) :
+    loan.repayment_timing_note ? (english ? "Agreed timing: " : "Napag-usapang timing: ") + String(loan.repayment_timing_note) : "";
+  const repayment = loan.repayment_frequency ? (english ? "Repayment schedule: " : "Paraan ng bayad: ") + String(loan.repayment_frequency) : "";
+  return {
+    intent: "answer_question",
+    message: english
+      ? "For " + String(loan.borrower_name) + ", the stored principal is " + peso(principalMinor) + " and the recorded interest terms are " + interestLabel(loan) + ". " + [timing, repayment, paymentText].filter(Boolean).join(" ") + " I can't state an exact total due or outstanding balance yet because the app's interest-calculation and payment-allocation rules have not been approved. The principal and interest terms above are the verified stored facts, not a calculated balance."
+      : "Para kay " + String(loan.borrower_name) + ", ang naka-record na principal ay " + peso(principalMinor) + " at ang napagkasunduang interest ay " + interestLabel(loan) + ". " + [timing, repayment, paymentText].filter(Boolean).join(" ") + " Hindi ko pa maibibigay ang eksaktong kabuuang bayarin o outstanding balance dahil hindi pa aprubado ang interest-calculation at payment-allocation rules ng app. Ang principal at interest terms sa itaas ang verified na naka-save, hindi pa ito calculated balance.",
+    proposedActions: [], needsClarification: false
+  };
+}
+
+export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: JsonObject): AssistantResponse | null {
   if (recordContext.available !== true || !Array.isArray(recordContext.borrowers)) return null;
   const userText = messages.filter(message => message.role === "user").map(message => message.content).join("\n");
   const hasLoanEvent = /\b(?:nagpautang|pinautang|pinahiram|nangutang|borrowed|lent|loaned|lend)\b/i.test(userText);
@@ -515,10 +565,20 @@ function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: 
   const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|bukas|tomorrow)/i);
   const explicitDateMatch = userText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   const dueDate = explicitDateMatch && isIsoDate(explicitDateMatch[1]) ? explicitDateMatch[1] : undefined;
-  const repaymentFrequency = /(?:weekly payments|weekly hulog|kada linggo ang hulog)/i.test(userText) ? "weekly" :
-    /(?:daily payments|daily hulog|araw-araw ang hulog)/i.test(userText) ? "daily" :
+  const lastUserTurn = [...messages].reverse().find(message => message.role === "user")?.content ?? "";
+  const lastAssistantTurn = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
+  const assistantAskedRepayment = /repayment|payment schedule|paraan ng bayad|schedule ng bayad|hulog|bayaran/i.test(lastAssistantTurn);
+  const repaymentFrequency =
+    /(?:weekly payments|weekly hulog|kada linggo ang hulog|lingguhan ang bayad)/i.test(userText) ? "weekly" :
+    /(?:daily payments|daily hulog|araw-araw ang hulog|kada araw ang bayad)/i.test(userText) ? "daily" :
     /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ? "biweekly" :
-    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog)/i.test(userText) ? "monthly" : "one_time";
+    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ? "monthly" :
+    assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment)/i.test(lastUserTurn) ? "one_time" :
+    /(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|buo ang bayad|full payment)/i.test(userText) ? "one_time" :
+    null;
+  // Interest cadence and repayment cadence are separate. Never reuse a bare
+  // "one-time" interest answer as a repayment schedule.
+  if (!repaymentFrequency) return null;
   const borrower = matches[0] ?? null;
   const interestDescription = interestType === "none" ? "walang interest" : interestValue + "% " + interestFrequency + " interest";
   const message = "Nakuha ko po. Ihahanda ko ang loan para kay " + borrowerName +
@@ -613,6 +673,8 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       targetedMatches = { searched: false, reason: "Targeted record search is temporarily unavailable." };
     }
   }
+  const financialLookupReply = buildFinancialLookupReply(lastUserMessage, language, targetedMatches);
+  if (financialLookupReply) return json(financialLookupReply);
   const systemPrompt = buildLendingAssistantSystemPrompt({ language, recordContext, targetedMatches }) +
     "\n\nTRANSACTION CONVERSATION STATE: " + JSON.stringify({
       status: transactionState.status,
@@ -659,6 +721,21 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     const verifiedLoanProposal = isPotentialWriteRequest(messages)
       ? buildVerifiedLoanProposal(messages, recordContext)
       : null;
+    const incompleteRepaymentProposal = parsed?.proposedActions.some(action =>
+      action.type === "create_loan" &&
+      !["one_time", "daily", "weekly", "biweekly", "monthly"].includes(String(action.payload.repaymentFrequency))
+    );
+    if (incompleteRepaymentProposal) {
+      if (verifiedLoanProposal) return json(verifiedLoanProposal);
+      return json({
+        intent: "request_clarification",
+        message: language === "en"
+          ? "What repayment schedule did you agree on: one payment, daily, weekly, every two weeks, or monthly? This is separate from how often interest is charged."
+          : "Ano po ang napagkasunduang paraan ng bayad: isang bayaran, araw-araw, lingguhan, kada dalawang linggo, o buwan-buwan? Iba po ito sa dalas ng pag-charge ng interest.",
+        proposedActions: [],
+        needsClarification: true
+      });
+    }
     if (verifiedLoanProposal && (!parsed || parsed.proposedActions.length === 0 && parsed.needsClarification ||
       parsed.proposedActions.length > 0 && parsed.proposedActions.every(action => action.type === "create_borrower"))) {
       return json(verifiedLoanProposal);

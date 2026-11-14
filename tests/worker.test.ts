@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import worker, { isLendingOverviewRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
+import worker, { buildFinancialLookupReply, buildVerifiedLoanProposal, isLendingOverviewRequest, isRecordLookupRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
 import { buildLendingAssistantSystemPrompt } from "../workers/api/src/lending-assistant-prompt";
 
 let loginAttempts = 0;
@@ -30,6 +30,50 @@ const env = {
 const authorized = { authorization: "Bearer test-secret" };
 
 describe("API worker", () => {
+  it("recognizes amount-due questions as record lookups and answers with verified facts without inventing a balance", () => {
+    expect(isRecordLookupRequest("Magkano ang bayarin ni Wilson Villanueva?")).toBe(true);
+    const reply = buildFinancialLookupReply("Magkano ang bayarin ni Wilson Villanueva?", "tl", {
+      searched: true,
+      loans: [{
+        id: "loan-wilson", borrower_name: "Wilson Villanueva", principal_minor: 100000,
+        interest_type: "percentage", interest_value: 10, interest_frequency: "one_time",
+        repayment_frequency: "one_time"
+      }],
+      payments: []
+    });
+    expect(reply?.message).toContain("₱1,000.00");
+    expect(reply?.message).toContain("10% one_time interest");
+    expect(reply?.message).toContain("Hindi ko pa maibibigay ang eksaktong kabuuang bayarin");
+    expect(reply?.message).not.toContain("₱1,100");
+  });
+
+  it("requires an explicit repayment answer and never treats one-time interest as one-time repayment", () => {
+    const context = {
+      available: true,
+      borrowers: [{ id: "borrower-wilson", full_name: "Wilson Villanueva", phone: null }]
+    };
+    const noSchedule = buildVerifiedLoanProposal([
+      { role: "user", content: "pinautang ko si Wilson Villanueva nang 1000 pesos" },
+      { role: "assistant", content: "May interest po ba?" },
+      { role: "user", content: "10% one-time interest" },
+      { role: "assistant", content: "Ano po ang repayment schedule?" },
+      { role: "user", content: "save" }
+    ], context);
+    expect(noSchedule).toBeNull();
+
+    const explicitSchedule = buildVerifiedLoanProposal([
+      { role: "user", content: "pinautang ko si Wilson Villanueva nang 1000 pesos" },
+      { role: "assistant", content: "May interest po ba?" },
+      { role: "user", content: "10% one-time interest" },
+      { role: "assistant", content: "Ano po ang repayment schedule?" },
+      { role: "user", content: "isang bayaran" }
+    ], context);
+    expect(explicitSchedule?.proposedActions[0].payload).toMatchObject({
+      interestFrequency: "one_time",
+      repaymentFrequency: "one_time"
+    });
+  });
+
   it("keeps a read-only lending overview from reopening an interest-terms conversation", () => {
     expect(isLendingOverviewRequest("Show my lending overview")).toBe(true);
     expect(isLendingOverviewRequest("How do I calculate interest?")).toBe(false);
