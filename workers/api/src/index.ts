@@ -33,6 +33,12 @@ const isRecord = (value: unknown): value is JsonObject =>
 const text = (value: unknown, max = 200): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= max;
 
+const isIsoDate = (value: unknown): value is string => {
+  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  const parsed = new Date(value + "T00:00:00Z");
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+
 function normalizeActionPayload(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
   if (!isRecord(input)) return null;
   const aliases: Record<string, ActionType> = {
@@ -97,8 +103,7 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
     if (!["one_time", "daily", "weekly", "monthly", "annual"].includes(String(payload.interestFrequency))) return null;
     if (payload.interestType === "none" && payload.interestValue !== 0) return null;
     if (payload.dueDate !== undefined && payload.dueDate !== null &&
-        (!text(payload.dueDate, 10) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(payload.dueDate) ||
-         new Date(payload.dueDate + "T00:00:00Z").toISOString().slice(0, 10) !== payload.dueDate)) return null;
+        !isIsoDate(payload.dueDate)) return null;
     if (payload.repaymentFrequency !== undefined && !["one_time", "daily", "weekly", "biweekly", "monthly"].includes(String(payload.repaymentFrequency))) return null;
     if (payload.repaymentTimingNote !== undefined && payload.repaymentTimingNote !== null && !text(payload.repaymentTimingNote, 240)) return null;
     if (payload.installmentCount !== undefined && payload.installmentCount !== null &&
