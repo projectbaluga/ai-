@@ -64,6 +64,12 @@ describe("API worker", () => {
     expect(response.status).toBe(404);
   });
 
+  it("rejects invalid payment report date ranges", async () => {
+    const request = new Request("https://example.test/api/reports/payments?from=2026-02-31&to=2026-02-01", { headers: authorized });
+    const response = await worker.fetch(request, env);
+    expect(response.status).toBe(400);
+  });
+
   it("rejects invalid prepared actions without touching the database", async () => {
     const request = new Request("https://example.test/api/actions/prepare", {
       method: "POST",
