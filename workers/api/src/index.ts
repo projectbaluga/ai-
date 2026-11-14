@@ -389,7 +389,7 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   // Carry an explicit owner approval forward only when the preceding assistant turn
   // was discussing a concrete write action; a bare "yes" must not create a record.
   const lastAssistant = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
-  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save it|register na)\b[.!\s]*$/i.test(lastUser);
+  const affirmative = /^(?:yes|yeah|yep|okay|ok|sige|oo|opo|go ahead|proceed|ituloy|gawin mo na|do it|save|i-save|isave|save it|register na)\b[.!\s]*$/i.test(lastUser);
   if (affirmative && /\b(?:register|create|add|save|record|update|archive|borrower|loan|payment)\b/i.test(lastAssistant)) return true;
 
   // A concise answer like "daily 3%" is a continuation when the assistant
