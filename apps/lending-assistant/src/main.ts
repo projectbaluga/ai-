@@ -526,8 +526,8 @@ function renderProposal(proposal: AssistantProposal) {
     const interest = payload.interestType === "none" ? "Walang interest" :
       String(payload.interestValue) + (payload.interestType === "percentage" ? "%" : " pesos") +
       (payload.interestPeriod === "monthly" ? " monthly" : " one-time");
-    details.textContent = "Borrower: " + borrower + (payload.borrowerFullName ? " (bagong borrower; irerehistro kasabay ng loan)" : "") +
-      "\\nPrincipal: " + principal + "\\nInterest: " + interest;
+    details.textContent = "Borrower: " + borrower + (payload.borrowerFullName ? " (kung bago pa, irerehistro kasabay ng loan)" : "") +
+      "\nPrincipal: " + principal + "\nInterest: " + interest;
   } else {
     details.textContent = JSON.stringify(proposal.payload, null, 2);
   }
