@@ -93,6 +93,11 @@ The response contains `intent`, `message`, `proposedActions`, and `needsClarific
 
 The Worker uses the Cloudflare Workers AI binding and `@cf/meta/llama-3.1-8b-instruct`. If AI is unavailable or returns invalid output, the endpoint returns an error; regular app controls remain the fallback.
 
+
+## Frontend/API routing
+
+The Pages project uses a Pages Function at `/api/*` to forward same-origin requests through the `API` service binding to the `ai-workspace-api` Worker. This keeps the browser on one origin so the HttpOnly session cookie can be used without exposing the owner secret to frontend JavaScript. The Pages Wrangler configuration declares the service binding; the Worker must exist before the Pages Function can be deployed. No Cloudflare service has been created or connected yet.
+
 ## Current implementation boundaries
 
 - The mobile-first dashboard, borrower/loan/payment views, borrower/loan/payment create forms, AI chat panel, browser voice input/output foundation, owner login screen, and explicit AI proposal review are in the frontend.
