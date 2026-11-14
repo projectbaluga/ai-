@@ -41,7 +41,8 @@ function normalizeActionPayload(type: unknown, input: unknown): { type: ActionTy
     record_payment: "record_payment", recordPayment: "record_payment",
     update_borrower: "update_borrower", updateBorrower: "update_borrower",
     archive_borrower: "archive_borrower", archiveBorrower: "archive_borrower",
-    update_loan_terms: "update_loan_terms", updateLoanTerms: "update_loan_terms",\n    clear_all_records: "clear_all_records", clearAllRecords: "clear_all_records", delete_all_records: "clear_all_records"
+    update_loan_terms: "update_loan_terms", updateLoanTerms: "update_loan_terms",
+    clear_all_records: "clear_all_records", clearAllRecords: "clear_all_records", delete_all_records: "clear_all_records"
   };
   const canonicalType = typeof type === "string" ? aliases[type] : undefined;
   if (!canonicalType) return null;
@@ -61,7 +62,10 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
   type = normalized.type;
   const payload = normalized.payload;
 
-  if (type === "clear_all_records") {\n    return Object.keys(payload).length === 0 ? { type, payload } : null;\n  }\n  if (type === "create_borrower") {
+  if (type === "clear_all_records") {
+    return Object.keys(payload).length === 0 ? { type, payload } : null;
+  }
+  if (type === "create_borrower") {
     if (!text(payload.fullName, 160)) return null;
     if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
@@ -329,6 +333,9 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   if (!lastUser) return false;
   // Educational questions remain ordinary conversation even when they mention lending terms.
   if (/\b(paano|how\s+(?:do\s+i|to|can\s+i)|what\s+is|what\s+are|why|when|where|explain|ipaliwanag|ano\s+ang)\b/i.test(lastUser)) return false;
+
+  const destructiveRequest = /\b(?:delete|erase|wipe|clear|burahin|tanggalin|alisin)\b/i.test(lastUser) && /\b(?:all|every|lahat|records?|record|data|borrowers?|loans?|payments?)\b/i.test(lastUser);
+  if (destructiveRequest) return true;
 
   const explicitWrite = /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang|nag[- ]?borrow|borrowed|umutang|nangutang|nag[- ]?loan|pinahiram)\s+(?:ako|si|ni|kay)?|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|register\s+(?!a\b|new\b)\w+|enroll\s+(?!a\b|new\b)\w+|add\s+.{1,80}\s+as\s+(?:a\s+)?borrower|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i;
   if (explicitWrite.test(lastUser)) return true;
