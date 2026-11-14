@@ -59,7 +59,12 @@ describe("API worker", () => {
       { role: "assistant", content: "Ano po ang repayment schedule?" },
       { role: "user", content: "save" }
     ], context);
-    expect(noSchedule).toBeNull();
+    expect(noSchedule).toMatchObject({
+      intent: "request_clarification",
+      proposedActions: [],
+      needsClarification: true
+    });
+    expect(noSchedule?.message).toContain("paraan ng bayad");
 
     const explicitSchedule = buildVerifiedLoanProposal([
       { role: "user", content: "pinautang ko si Wilson Villanueva nang 1000 pesos" },
