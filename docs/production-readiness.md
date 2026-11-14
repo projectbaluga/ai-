@@ -11,7 +11,7 @@ This repository is not deployed. Complete and verify the items below before conn
 
 ## Security and access
 
-- [ ] Add login rate limiting and abuse monitoring before exposing the login endpoint publicly. The current owner passphrase check has no application-level attempt limit.
+- [x] Add D1-backed login rate limiting: five attempts per IP per 15-minute window, with hashed IP identifiers and reset after successful login.\n- [ ] Add abuse monitoring and alerting for repeated blocked attempts.
 - [ ] Generate a long, random owner passphrase and store it only as the Worker `OWNER_API_TOKEN` secret. Never commit the value.
 - [ ] Restrict and review GitHub Actions secrets and Cloudflare API token scopes before enabling manual deployment workflows.
 - [ ] Verify cookie session, logout, same-origin write protection, and authorization behavior against the deployed Pages-to-Worker service binding.
