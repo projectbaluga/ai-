@@ -44,6 +44,25 @@ describe("API worker", () => {
     expect(await session.json()).toMatchObject({ authenticated: true });
   });
 
+  it("rejects cookie-authenticated writes without a same-origin Origin header", async () => {
+    const login = await worker.fetch(new Request("https://example.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://example.test" },
+      body: JSON.stringify({ password: "test-secret" })
+    }), env);
+    const cookie = login.headers.get("set-cookie")!.split(";")[0];
+    for (const origin of [undefined, "https://attacker.test"]) {
+      const headers = new Headers({ cookie, "content-type": "application/json" });
+      if (origin) headers.set("origin", origin);
+      const response = await worker.fetch(new Request("https://example.test/api/actions/prepare", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ type: "create_borrower", payload: { fullName: "Test" } })
+      }), env);
+      expect(response.status).toBe(403);
+    }
+  });
+
   it("rejects an incorrect owner passphrase", async () => {
     const response = await worker.fetch(new Request("https://example.test/api/auth/login", {
       method: "POST",
