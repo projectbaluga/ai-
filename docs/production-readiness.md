@@ -6,8 +6,8 @@ This repository is not deployed. Complete and verify the items below before conn
 
 - [x] Typecheck, unit tests, D1 integration tests, and production build run in GitHub Actions.
 - [x] Dependency audit runs in CI.
-- [ ] Add and commit a package lockfile, then switch CI and deployment workflows from `npm install` to `npm ci` for reproducible installs.
-- [ ] Review and pin third-party GitHub Actions to immutable commit SHAs before production use.
+- [x] Add and commit `package-lock.json`; CI and deployment workflows use `npm ci` for reproducible installs.
+- [x] Pin the checkout, setup-node, and Wrangler GitHub Actions to verified immutable commit SHAs.
 
 ## Security and access
 
