@@ -5,6 +5,7 @@ import type {
   SupportedLanguage
 } from "../../../packages/ai-core/src/contracts";
 import { buildLendingAssistantSystemPrompt } from "./lending-assistant-prompt";
+import { buildTransactionConversationState } from "./transaction-conversation-state";
 import { runLendingAssistantModel, type WorkersAiBinding } from "./workers-ai-provider";
 
 export interface Env {
@@ -422,6 +423,17 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   const language: SupportedLanguage =
     body.language === "en" || body.language === "tl" || body.language === "tl-en" ? body.language : "tl-en";
   const lastUserMessage = messages[messages.length - 1].content;
+  const transactionState = buildTransactionConversationState(messages);
+  if (transactionState.cancelled) {
+    return json({
+      intent: "answer_question",
+      message: language === "en"
+        ? "Understood. I won't proceed with that transaction. No records were changed."
+        : "Sige po, hindi ko itutuloy ang transaction. Walang binago sa records.",
+      proposedActions: [],
+      needsClarification: false
+    });
+  }
   const needsRecordContext = isPotentialWriteRequest(messages) || isRecordLookupRequest(lastUserMessage);
   let recordContext: JsonObject = {
     available: false,
@@ -447,7 +459,12 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       targetedMatches = { searched: false, reason: "Targeted record search is temporarily unavailable." };
     }
   }
-  const systemPrompt = buildLendingAssistantSystemPrompt({ language, recordContext, targetedMatches });
+  const systemPrompt = buildLendingAssistantSystemPrompt({ language, recordContext, targetedMatches }) +
+    "\\n\\nTRANSACTION CONVERSATION STATE: " + JSON.stringify({
+      status: transactionState.status,
+      carriesTransactionContext: transactionState.carriesTransactionContext,
+      instruction: transactionState.instruction
+    });
 
   const requestId = crypto.randomUUID();
   try {
