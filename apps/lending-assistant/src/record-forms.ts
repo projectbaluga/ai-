@@ -1,5 +1,5 @@
 type BorrowerOption = { id: string; full_name: string; phone?: string | null; notes?: string | null };
-type LoanOption = { id: string; borrower_id: string; principal_minor: number; status: string };
+type LoanOption = { id: string; borrower_id: string; principal_minor: number; status: string; interest_type: string; interest_value: number; interest_period: string };
 
 function safe(value: string): string {
   return value.replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]!));
@@ -78,7 +78,7 @@ async function prepareAndReview(type: string, payload: Record<string, unknown>, 
   }
 }
 
-export function bindRecordForms(root: HTMLElement, refresh: () => Promise<void>, borrowers: BorrowerOption[] = []): void {
+export function bindRecordForms(root: HTMLElement, refresh: () => Promise<void>, borrowers: BorrowerOption[] = [], loans: LoanOption[] = []): void {
   root.querySelector<HTMLFormElement>("#borrower-form")?.addEventListener("submit", event => {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
@@ -111,6 +111,23 @@ export function bindRecordForms(root: HTMLElement, refresh: () => Promise<void>,
     if (target) void prepareAndReview("create_loan", payload, "Create loan", target, refresh);
   });
 
+  root.querySelectorAll<HTMLButtonElement>("[data-edit-loan]").forEach(button => button.addEventListener("click", () => {
+    const loan = loans.find(item => item.id === button.dataset.editLoan);
+    if (!loan) return;
+    const interestType = window.prompt("Interest type: none, fixed, or percentage", loan.interest_type);
+    if (!interestType || !["none", "fixed", "percentage"].includes(interestType)) return;
+    const rawValue = window.prompt("Interest value", String(loan.interest_value));
+    if (rawValue === null) return;
+    const interestValue = Number(rawValue);
+    const interestPeriod = window.prompt("Interest period: one_time or monthly", loan.interest_period);
+    if (!["one_time", "monthly"].includes(interestPeriod ?? "")) return;
+    if (!Number.isFinite(interestValue) || interestValue < 0 || (interestType === "none" && interestValue !== 0)) {
+      window.alert("Please enter valid interest terms.");
+      return;
+    }
+    const target = root.querySelector<HTMLElement>("#record-review");
+    if (target) void prepareAndReview("update_loan_terms", { loanId: loan.id, interestType, interestValue, interestPeriod }, "Update loan interest terms", target, refresh);
+  }));
   root.querySelectorAll<HTMLButtonElement>("[data-edit-borrower]").forEach(button => button.addEventListener("click", () => {
     const borrower = borrowers.find(item => item.id === button.dataset.editBorrower);
     if (!borrower) return;
