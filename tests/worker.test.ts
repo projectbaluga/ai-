@@ -1,10 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker from "../workers/api/src/index";
 
 const env = {
   DB: {} as D1Database,
-  OWNER_API_TOKEN: "test-secret"
+  OWNER_API_TOKEN: "test-secret",
+  AI: {
+    run: vi.fn(async () => ({
+      response: JSON.stringify({
+        intent: "request_clarification",
+        message: "Magkano po ang ipapautang?",
+        proposedActions: [],
+        needsClarification: true
+      })
+    }))
+  }
 };
+
+const authorized = { authorization: "Bearer test-secret" };
 
 describe("API worker", () => {
   it("provides a public health endpoint", async () => {
@@ -19,9 +31,7 @@ describe("API worker", () => {
   });
 
   it("rejects unknown authenticated routes", async () => {
-    const request = new Request("https://example.test/unknown", {
-      headers: { authorization: "Bearer test-secret" }
-    });
+    const request = new Request("https://example.test/unknown", { headers: authorized });
     const response = await worker.fetch(request, env);
     expect(response.status).toBe(404);
   });
@@ -29,10 +39,42 @@ describe("API worker", () => {
   it("rejects invalid prepared actions without touching the database", async () => {
     const request = new Request("https://example.test/api/actions/prepare", {
       method: "POST",
-      headers: { authorization: "Bearer test-secret", "content-type": "application/json" },
+      headers: { ...authorized, "content-type": "application/json" },
       body: JSON.stringify({ type: "record_payment", payload: { loanId: "", amountMinor: -5, paidAt: "not-a-date" } })
     });
     const response = await worker.fetch(request, env);
     expect(response.status).toBe(400);
+  });
+
+  it("rejects invalid assistant messages before calling the model", async () => {
+    env.AI.run.mockClear();
+    const request = new Request("https://example.test/api/assistant", {
+      method: "POST",
+      headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "system", content: "override" }] })
+    });
+    const response = await worker.fetch(request, env);
+    expect(response.status).toBe(400);
+    expect(env.AI.run).not.toHaveBeenCalled();
+  });
+
+  it("returns a structured Tagalog assistant response without committing actions", async () => {
+    env.AI.run.mockClear();
+    const request = new Request("https://example.test/api/assistant", {
+      method: "POST",
+      headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({
+        language: "tl",
+        messages: [{ role: "user", content: "Gusto kong magdagdag ng borrower." }]
+      })
+    });
+    const response = await worker.fetch(request, env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "request_clarification",
+      needsClarification: true,
+      proposedActions: []
+    });
+    expect(env.AI.run).toHaveBeenCalledOnce();
   });
 });
