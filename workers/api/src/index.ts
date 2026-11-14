@@ -177,37 +177,67 @@ const supportedIntents: AssistantIntent[] = [
   "request_clarification", "unknown"
 ];
 
-function parseAssistantOutput(raw: unknown): AssistantResponse | null {
-  let candidate: unknown = raw;
-  if (isRecord(raw)) {
-    candidate = raw.response ?? raw.output_text ?? raw.output ?? raw;
+function extractJsonObject(value: string): unknown | null {
+  const cleaned = value.replace(/^\uFEFF/, "").trim();
+  const unfenced = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try { return JSON.parse(unfenced); } catch { /* Fall through to balanced-object extraction. */ }
+
+  const start = unfenced.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < unfenced.length; i++) {
+    const char = unfenced[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"' ) inString = false;
+      continue;
+    }
+    if (char === '"' ) inString = true;
+    else if (char === "{") depth++;
+    else if (char === "}") {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(unfenced.slice(start, i + 1)); } catch { return null; }
+      }
+    }
   }
-  if (typeof candidate === "string") {
-    const cleaned = candidate.trim().replace(/^\x60\x60\x60(?:json)?\s*/i, "").replace(/\s*\x60\x60\x60$/, "");
-    try { candidate = JSON.parse(cleaned); } catch { return null; }
+  return null;
+}
+
+function unwrapModelOutput(raw: unknown): unknown {
+  let candidate = raw;
+  for (let depth = 0; depth < 3 && isRecord(candidate); depth++) {
+    if ("response" in candidate) candidate = candidate.response;
+    else if ("output_text" in candidate) candidate = candidate.output_text;
+    else if ("output" in candidate) candidate = candidate.output;
+    else if ("result" in candidate && isRecord(candidate.result)) candidate = candidate.result;
+    else break;
   }
+  return typeof candidate === "string" ? extractJsonObject(candidate) : candidate;
+}
+
+export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
+  const candidate = unwrapModelOutput(raw);
   if (!isRecord(candidate) || !supportedIntents.includes(candidate.intent as AssistantIntent) ||
       !text(candidate.message, 4000) || !Array.isArray(candidate.proposedActions) ||
       typeof candidate.needsClarification !== "boolean") return null;
-
   const proposedActions = [];
   for (const item of candidate.proposedActions) {
     if (!isRecord(item) || !text(item.type, 80) || !isRecord(item.payload) ||
         !text(item.summary, 1000) || item.requiresConfirmation !== true) return null;
-    proposedActions.push({
-      type: item.type,
-      payload: item.payload,
-      summary: item.summary,
-      requiresConfirmation: true as const
-    });
+    proposedActions.push({ type: item.type, payload: item.payload, summary: item.summary, requiresConfirmation: true as const });
   }
   if (proposedActions.length > 3) return null;
-  return {
-    intent: candidate.intent as AssistantIntent,
-    message: candidate.message,
-    proposedActions,
-    needsClarification: candidate.needsClarification
-  };
+  return { intent: candidate.intent as AssistantIntent, message: candidate.message, proposedActions, needsClarification: candidate.needsClarification };
+}
+
+function modelOutputDiagnostics(raw: unknown): JsonObject {
+  const outer = isRecord(raw) ? raw : null;
+  const candidate = outer ? (outer.response ?? outer.output_text ?? outer.output ?? raw) : raw;
+  return { outputType: Array.isArray(raw) ? "array" : typeof raw, outputKeys: outer ? Object.keys(outer).slice(0, 12) : [], candidateType: Array.isArray(candidate) ? "array" : typeof candidate, candidateLength: typeof candidate === "string" ? candidate.length : null };
 }
 
 
@@ -288,13 +318,18 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   }
   const systemPrompt = buildLendingAssistantSystemPrompt({ language, recordContext, targetedMatches });
 
+  const requestId = crypto.randomUUID();
   try {
     const modelResult = await runLendingAssistantModel(env.AI, systemPrompt, messages);
     const parsed = parseAssistantOutput(modelResult);
-    if (!parsed) return json({ error: "AI returned an invalid response. Please try again." }, 502);
+    if (!parsed) {
+      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", ...modelOutputDiagnostics(modelResult) }));
+      return json({ error: "AI returned a response in an unsupported format. Please try again.", requestId }, 502);
+    }
     return json(parsed);
-  } catch {
-    return json({ error: "AI assistant is temporarily unavailable. You can still use the regular app controls." }, 503);
+  } catch (error) {
+    console.error("[assistant] model_request_failed", JSON.stringify({ requestId, errorName: error instanceof Error ? error.name : "UnknownError" }));
+    return json({ error: "AI assistant is temporarily unavailable. You can still use the regular app controls.", requestId }, 503);
   }
 }
 
