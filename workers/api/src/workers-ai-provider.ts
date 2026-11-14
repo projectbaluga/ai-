@@ -2,7 +2,7 @@ export interface WorkersAiBinding {
   run(model: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
-export const LENDING_ASSISTANT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+export const LENDING_ASSISTANT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 
 /**
  * Server-side adapter for Cloudflare Workers AI.
@@ -19,6 +19,7 @@ export async function runLendingAssistantModel(
       { role: "system", content: systemPrompt },
       ...messages
     ],
-    max_tokens: 900
+    max_tokens: 480,
+    temperature: 0.35
   });
 }
