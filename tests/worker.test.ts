@@ -1,8 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import worker from "../workers/api/src/index";
 
+let loginAttempts = 0;
+const mockDb = {
+  prepare: (_sql: string) => ({
+    bind: (..._values: unknown[]) => ({
+      first: async () => ({ attempts: ++loginAttempts, window_started_at: Math.floor(Date.now() / 1000) }),
+      run: async () => { loginAttempts = 0; return { success: true }; }
+    })
+  })
+};
+
 const env = {
-  DB: {} as D1Database,
+  DB: mockDb as unknown as D1Database,
   OWNER_API_TOKEN: "test-secret",
   AI: {
     run: vi.fn(async () => ({
@@ -18,7 +28,7 @@ const env = {
 
 const authorized = { authorization: "Bearer test-secret" };
 
-describe("API worker", () => {
+describe("API worker", () => {\n  beforeEach(() => { loginAttempts = 0; });
   it("provides a public health endpoint", async () => {
     const response = await worker.fetch(new Request("https://example.test/health"), env);
     expect(response.status).toBe(200);
@@ -70,6 +80,20 @@ describe("API worker", () => {
       body: JSON.stringify({ password: "wrong-password" })
     }), env);
     expect(response.status).toBe(401);
+  });
+
+  it("returns 429 after five failed owner login attempts from the same IP", async () => {
+    const makeLogin = (password: string) => worker.fetch(new Request("https://example.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": "192.0.2.10" },
+      body: JSON.stringify({ password })
+    }), env);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      expect((await makeLogin("wrong-password")).status).toBe(401);
+    }
+    const blocked = await makeLogin("test-secret");
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBeTruthy();
   });
 
   it("protects API routes", async () => {
