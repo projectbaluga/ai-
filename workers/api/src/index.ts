@@ -392,7 +392,9 @@ export default {
     const cookieAuthorized = await hasValidSession(request, env.OWNER_API_TOKEN);
     if (!bearerAuthorized && !cookieAuthorized) return json({ error: "Unauthorized" }, 401);
     const origin = request.headers.get("origin");
-    if (request.method !== "GET" && origin && origin !== url.origin) return json({ error: "Invalid request origin." }, 403);
+    if (request.method !== "GET" && (origin && origin !== url.origin || cookieAuthorized && origin !== url.origin)) {
+      return json({ error: "Invalid request origin." }, 403);
+    }
     if (request.method === "GET" && url.pathname === "/api/auth/session") return json({ authenticated: true, expiresInSeconds: SESSION_SECONDS });
 
     if (request.method === "GET" && url.pathname === "/api") {
