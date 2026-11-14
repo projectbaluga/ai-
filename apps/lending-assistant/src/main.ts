@@ -19,6 +19,7 @@ const state = {
   messages: [] as Array<{ role: "user" | "assistant"; content: string }>,
   busy: false,
   listening: false,
+  voiceMode: false,
   voiceAvailable: false,
 };
 
@@ -111,6 +112,12 @@ function addMessage(role: "user" | "assistant", content: string) {
   bubble.className = `message-bubble ${role}`;
   bubble.textContent = content;
   list.append(bubble);
+  if (role === "assistant" && state.voiceMode && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(content);
+    utterance.lang = /[\\u0E00-\\u0E7F]/.test(content) ? "fil-PH" : "en-PH";
+    window.speechSynthesis.speak(utterance);
+  }
   list.scrollTop = list.scrollHeight;
 }
 
@@ -156,6 +163,7 @@ function toggleVoice() {
   }
   if (state.listening && recognition) { recognition.stop(); return; }
   recognition = new Speech();
+  state.voiceMode = true;
   recognition.lang = "fil-PH";
   recognition.continuous = false;
   recognition.interimResults = false;
