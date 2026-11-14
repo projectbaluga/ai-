@@ -38,9 +38,9 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
   const hasRecentLoanNarrative = recent.some(message => message.role === "user" && LOAN_EVENT.test(message.content));
   const assistantAskedForTerms = TERMS_QUESTION.test(lastAssistant) && /[?؟]/.test(lastAssistant);
   const isShortFollowup = lastUser.length <= 180 && !/[?؟]/.test(lastUser);
+  const suppliesTransactionDetail = /\d|%|\b(?:daily|weekly|monthly|one[- ]?time|fixed|percentage|araw|linggo|buwan|bukas|tomorrow|next\s+month|end\s+of\s+the\s+month|no\s+interest|without\s+interest|walang\s+tubo|walang\s+interest)\b/i.test(lastUser);
   const correction = /\b(?:actually|correction|instead|change|correct|mali|palitan|palit|ang ibig kong sabihin|dapat)\b/i.test(lastUser);
-
-  if (hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && correction) {
+  if (hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail && correction) {
     return {
       status: "revising_transaction",
       cancelled: false,
@@ -49,7 +49,7 @@ export function buildTransactionConversationState(messages: AssistantMessage[]):
     };
   }
 
-  if (hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms) {
+  if (hasRecentLoanNarrative && isShortFollowup && assistantAskedForTerms && suppliesTransactionDetail) {
     return {
       status: "continuing_transaction",
       cancelled: false,
