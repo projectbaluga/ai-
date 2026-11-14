@@ -111,6 +111,25 @@ describe("API worker", () => {
     expect(env.AI.run).not.toHaveBeenCalled();
   });
 
+  it("rejects oversized combined AI conversation context before calling the model", async () => {
+    env.AI.run.mockClear();
+    const request = new Request("https://example.test/api/assistant", {
+      method: "POST",
+      headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          { role: "assistant", content: "a".repeat(4000) },
+          { role: "assistant", content: "b".repeat(4000) },
+          { role: "assistant", content: "c".repeat(4000) },
+          { role: "user", content: "d".repeat(1) }
+        ]
+      })
+    });
+    const response = await worker.fetch(request, env);
+    expect(response.status).toBe(400);
+    expect(env.AI.run).not.toHaveBeenCalled();
+  });
+
   it("returns a structured Tagalog assistant response without committing actions", async () => {
     env.AI.run.mockClear();
     const request = new Request("https://example.test/api/assistant", {
