@@ -358,15 +358,15 @@ describe("API worker", () => {
       recordContext: { available: false },
       targetedMatches: { searched: false }
     });
-    expect(systemPrompt).toContain("NATURAL HUMAN CONVERSATION");
+    expect(systemPrompt).toContain("LANGUAGE AND TONE");
     expect(systemPrompt).toContain("CONTEXT THREADING");
-    expect(systemPrompt).toContain("NO REPEATED QUESTIONS");
-    expect(systemPrompt).toContain("FINANCIAL CARE");
+    expect(systemPrompt).toContain("CORRECTIONS AND SHORT REPLIES");
+    expect(systemPrompt).toContain("FINANCIAL FACT BOUNDARIES");
     expect(systemPrompt).toContain("ERROR RECOVERY");
-    expect(systemPrompt).toContain("MULTI-TURN TRANSACTION STATE");
+    expect(systemPrompt).toContain("TRANSACTION PACING");
     expect(systemPrompt).toContain("REASONING DISCIPLINE");
-    expect(systemPrompt).toContain("ANSWER QUALITY");
-    expect(systemPrompt).toContain("2026-11-14.13");
+    expect(systemPrompt).toContain("ACTION OUTPUT CONTRACT");
+    expect(systemPrompt).toContain("2026-11-14.14");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
