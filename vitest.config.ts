@@ -5,8 +5,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [
     cloudflareTest(async () => ({
-      wrangler: { configPath: "workers/api/wrangler.toml" },
+      main: "./workers/api/src/index.ts",
       miniflare: {
+        compatibilityDate: "2026-11-14",
+        d1Databases: ["DB"],
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(new URL("./database/migrations", import.meta.url).pathname)
         }
