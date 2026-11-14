@@ -78,3 +78,11 @@
   outline-offset: 2px;
 }
 .quick-reply:active { transform: scale(.98); }
+
+.quick-replies-prompt {
+  flex-basis: 100%;
+  margin: 0 0 2px;
+  color: var(--muted, #686477);
+  font-size: .88rem;
+  line-height: 1.4;
+}
