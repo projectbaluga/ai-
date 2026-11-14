@@ -179,9 +179,9 @@ function addMessage(role: "user" | "assistant", content: string) {
 function renderContextPanel(query: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list || !state.connected) return;
-  const q = query.toLocaleLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+  const q = query.toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const has = (...terms: string[]) => terms.some(term => q.includes(term));
-  const nameMatches = (name: string) => { const normalized = name.toLocaleLowerCase(); const words = normalized.split(/\\s+/); return q.includes(normalized) || words.some(word => word.length > 2 && q.split(/\\s+/).includes(word)); };
+  const nameMatches = (name: string) => { const normalized = name.toLocaleLowerCase(); const words = normalized.split(/\s+/); return q.includes(normalized) || words.some(word => word.length > 2 && q.split(/\s+/).includes(word)); };
   const card = document.createElement("section");
   card.className = "context-panel";
   const heading = document.createElement("h4");
