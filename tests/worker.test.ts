@@ -73,6 +73,41 @@ describe("API worker", () => {
     expect(parseAssistantOutput(base)?.proposedActions[0].payload).toMatchObject({ borrowerFullName: "Allan Lobrigo" });
     expect(parseAssistantOutput({ ...base, proposedActions: [{ ...base.proposedActions[0], payload: { ...base.proposedActions[0].payload, borrowerFullName: undefined, borrowerId: "PENDING_BORROWER_ID" } }] })).toBeNull();
   });
+  it("accepts expanded interest and repayment terms and rejects impossible due dates", () => {
+    const base = {
+      intent: "prepare_action",
+      message: "Pakireview ang weekly loan.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerFullName: "Mica",
+          principalMinor: 10000,
+          currency: "PHP",
+          interestType: "percentage",
+          interestValue: 2,
+          interestPeriod: "one_time",
+          interestFrequency: "weekly",
+          dueDate: "2026-11-21",
+          repaymentTimingNote: "sa susunod na linggo",
+          repaymentFrequency: "weekly",
+          installmentCount: 4
+        },
+        summary: "I-save ang loan ni Mica",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    expect(parseAssistantOutput(base)?.proposedActions[0].payload).toMatchObject({
+      interestFrequency: "weekly",
+      repaymentFrequency: "weekly",
+      dueDate: "2026-11-21",
+      installmentCount: 4
+    });
+    const invalid = structuredClone(base);
+    invalid.proposedActions[0].payload.dueDate = "2026-02-31";
+    expect(parseAssistantOutput(invalid)).toBeNull();
+  });
+
   beforeEach(() => { loginAttempts = 0; });
   it("provides a public health endpoint", async () => {
     const response = await worker.fetch(new Request("https://example.test/health"), env);
@@ -318,7 +353,7 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("FINANCIAL CARE");
     expect(systemPrompt).toContain("ERROR RECOVERY");
     expect(systemPrompt).toContain("MULTI-TURN TRANSACTION STATE");
-    expect(systemPrompt).toContain("2026-11-14.10");
+    expect(systemPrompt).toContain("2026-11-14.11");
   });
 
   it("keeps an English loan narration active when the owner supplies interest terms in a later turn", async () => {
