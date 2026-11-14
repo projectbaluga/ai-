@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import worker from "../workers/api/src/index";
+import worker, { parseAssistantOutput } from "../workers/api/src/index";
 import { buildLendingAssistantSystemPrompt } from "../workers/api/src/lending-assistant-prompt";
 
 let loginAttempts = 0;
@@ -30,6 +30,49 @@ const env = {
 const authorized = { authorization: "Bearer test-secret" };
 
 describe("API worker", () => {
+  it("combines a new borrower registration and loan into one validated approval", () => {
+    const parsed = parseAssistantOutput({
+      intent: "prepare_action",
+      message: "Ise-save natin si Allan Lobrigo at ang kanyang loan na ₱1,000.",
+      proposedActions: [
+        { type: "create_borrower", payload: { fullName: "Allan Lobrigo" }, summary: "I-register si Allan Lobrigo", requiresConfirmation: true },
+        { type: "create_loan", payload: { borrowerId: "PENDING_BORROWER_ID", principalMinor: 100000, currency: "PHP", interestType: "percentage", interestValue: 5, interestPeriod: "one_time" }, summary: "I-record ang ₱1,000 loan", requiresConfirmation: true }
+      ],
+      needsClarification: false
+    });
+    expect(parsed).toMatchObject({
+      intent: "prepare_action",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerFullName: "Allan Lobrigo",
+          principalMinor: 100000,
+          currency: "PHP",
+          interestType: "percentage",
+          interestValue: 5,
+          interestPeriod: "one_time"
+        },
+        requiresConfirmation: true
+      }]
+    });
+    expect(parsed?.proposedActions).toHaveLength(1);
+  });
+
+  it("accepts a composite new-borrower loan payload but rejects an unresolved borrower placeholder", () => {
+    const base = {
+      intent: "prepare_action",
+      message: "Pakireview ang loan.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: { borrowerFullName: "Allan Lobrigo", principalMinor: 100000, currency: "PHP", interestType: "percentage", interestValue: 5, interestPeriod: "one_time" },
+        summary: "I-save ang loan",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    expect(parseAssistantOutput(base)?.proposedActions[0].payload).toMatchObject({ borrowerFullName: "Allan Lobrigo" });
+    expect(parseAssistantOutput({ ...base, proposedActions: [{ ...base.proposedActions[0], payload: { ...base.proposedActions[0].payload, borrowerFullName: undefined, borrowerId: "PENDING_BORROWER_ID" } }] })).toBeNull();
+  });
   beforeEach(() => { loginAttempts = 0; });
   it("provides a public health endpoint", async () => {
     const response = await worker.fetch(new Request("https://example.test/health"), env);
