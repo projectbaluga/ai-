@@ -4,7 +4,8 @@ type Borrower = { id: string; full_name: string; phone?: string | null };
 type Loan = { id: string; borrower_id: string; principal_minor: number; currency: string; status: string };
 type Payment = { id: string; loan_id: string; amount_minor: number; paid_at: string };
 type ApiList<T> = { results: T[] };
-type AssistantReply = { message: string; proposedActions?: Array<{ type: string; payload: Record<string, unknown>; summary: string; requiresConfirmation: true }>; needsClarification?: boolean };
+type AssistantProposal = { type: string; payload: Record<string, unknown>; summary: string; requiresConfirmation: true };
+type AssistantReply = { message: string; proposedActions?: AssistantProposal[]; needsClarification?: boolean };
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("App root not found");
@@ -122,6 +123,69 @@ function addMessage(role: "user" | "assistant", content: string) {
   list.scrollTop = list.scrollHeight;
 }
 
+
+function renderProposal(proposal: AssistantProposal) {
+  const list = document.querySelector<HTMLElement>("#chat-messages");
+  if (!list) return;
+  const card = document.createElement("section");
+  card.className = "proposal-card";
+  const heading = document.createElement("strong");
+  heading.textContent = "Proposed action · approval required";
+  const summary = document.createElement("p");
+  summary.textContent = proposal.summary;
+  const details = document.createElement("pre");
+  details.textContent = JSON.stringify(proposal.payload, null, 2);
+  const prepare = document.createElement("button");
+  prepare.className = "proposal-button";
+  prepare.textContent = "Review transaction details";
+  prepare.addEventListener("click", async () => {
+    prepare.disabled = true;
+    prepare.textContent = "Preparing…";
+    try {
+      const response = await fetch("/api/actions/prepare", {
+        method: "POST", headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ type: proposal.type, payload: proposal.payload })
+      });
+      const data = await response.json() as { actionId?: string; error?: string };
+      if (!response.ok || !data.actionId) throw new Error(data.error ?? "Could not prepare this action.");
+      const notice = document.createElement("p");
+      notice.className = "proposal-notice";
+      notice.textContent = "Review the details above. Nothing is saved until you press Confirm and save.";
+      const confirm = document.createElement("button");
+      confirm.className = "proposal-confirm";
+      confirm.textContent = "Confirm and save";
+      confirm.addEventListener("click", async () => {
+        confirm.disabled = true;
+        confirm.textContent = "Saving…";
+        try {
+          const result = await fetch("/api/actions/" + encodeURIComponent(data.actionId!) + "/confirm", {
+            method: "POST", credentials: "same-origin"
+          });
+          const resultData = await result.json() as { error?: string; status?: string };
+          if (!result.ok) throw new Error(resultData.error ?? "The transaction could not be saved.");
+          notice.textContent = "Confirmed and saved successfully. Refreshing lending records…";
+          confirm.remove();
+          await loadData();
+          addMessage("assistant", "Confirmed po. Na-save ang transaction at na-refresh ang lending records.");
+        } catch (error) {
+          notice.textContent = error instanceof Error ? error.message : "Save failed. Please check the records.";
+          confirm.disabled = false;
+          confirm.textContent = "Try confirmation again";
+        }
+      });
+      prepare.remove();
+      card.append(notice, confirm);
+    } catch (error) {
+      prepare.disabled = false;
+      prepare.textContent = error instanceof Error ? error.message : "Try again";
+    }
+  });
+  card.append(heading, summary, details, prepare);
+  list.appendChild(card);
+  list.scrollTop = list.scrollHeight;
+}
+
 async function sendMessage(event: SubmitEvent) {
   event.preventDefault();
   const input = document.querySelector<HTMLTextAreaElement>("#chat-input");
@@ -142,7 +206,7 @@ async function sendMessage(event: SubmitEvent) {
     const data = await response.json() as AssistantReply & { error?: string };
     if (!response.ok) throw new Error(data.error ?? "Assistant request failed.");
     addMessage("assistant", data.message);
-    if (data.proposedActions?.length) data.proposedActions.forEach(a => addMessage("assistant", `For your approval: ${a.summary}. This is only a proposal; it has not been saved.`));
+    if (data.proposedActions?.length) data.proposedActions.forEach(renderProposal);
   } catch (error) {
     addMessage("assistant", error instanceof Error ? error.message : "Hindi muna available ang assistant. Walang na-save na transaction.");
   } finally { state.busy = false; }
