@@ -236,7 +236,8 @@ function renderContextPanel(query: string) {
   if (paymentIdMatches.length || has("payment", "bayad", "hulog", "nabayad", "payments")) kind = "payments";
   else if (loanIdMatches.length || has("loan", "loans", "pautang", "utang record", "active loan")) kind = "loans";
   else if (has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") || namedBorrowers.length || ambiguousBorrowers.length) kind = "borrowers";
-  else if (has("activity", "history", "kasaysayan", "recent")) kind = "activity";
+  else if (has("report", "reports", "ulat", "statement", "collection summary")) kind = "reports";
+  else if (has("activity", "history", "kasaysayan", "recent activity")) kind = "activity";
   else if (has("overview", "dashboard", "summary", "kabuuan", "workspace")) kind = "overview";
   if (kind === "borrowers") {
     heading.textContent = ambiguousBorrowers.length ? "Possible borrower matches" : "Borrower records";
@@ -276,6 +277,23 @@ function renderContextPanel(query: string) {
       const borrower = loan && state.borrowers.find(b => b.id === loan.borrower_id);
       addRow(peso(p.amount_minor), (borrower?.full_name ?? "Borrower unavailable") + " · " + new Date(p.paid_at).toLocaleString("en-PH"), "loans", p.loan_id, "payment");
     });
+  } else if (kind === "reports") {
+    heading.textContent = "On-demand reports";
+    const description = document.createElement("p");
+    description.className = "context-note";
+    description.textContent = "You can generate a payment report for a date range you choose. It totals recorded payments only; it does not estimate balances, interest, or payoff amounts.";
+    card.appendChild(description);
+    const openReport = document.createElement("button");
+    openReport.type = "button";
+    openReport.className = "context-open";
+    openReport.textContent = "Open payment reports";
+    openReport.addEventListener("click", () => {
+      state.page = "reports";
+      renderPage();
+      document.querySelector("#payment-report-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    card.appendChild(openReport);
+    count++;
   } else if (kind === "activity") {
     heading.textContent = "Confirmed activity";
     state.activity.slice(0, 12).forEach(a => addRow(a.action.replaceAll("_", " "), a.entity_type + " · " + new Date(a.created_at).toLocaleString("en-PH"), a.entity_type === "borrower" ? "borrowers" : "loans", a.entity_id, "activity"));
