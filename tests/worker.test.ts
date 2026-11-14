@@ -639,7 +639,7 @@ describe("API worker", () => {
       proposedActions: []
     });
     expect(env.AI.run).toHaveBeenCalledOnce();
-    expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 1200, temperature: 0.35 }));
+    expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 2400, temperature: 0.35, chat_template_kwargs: { enable_thinking: true } }));
   });
 
   it("carries an explicit confirmation forward when the previous assistant turn named the write action", async () => {
