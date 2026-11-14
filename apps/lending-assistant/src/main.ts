@@ -182,28 +182,32 @@ function addMessage(role: "user" | "assistant", content: string) {
 
 function renderQuickReplies(message: string, list: HTMLElement) {
   const text = message.toLocaleLowerCase();
-  const previousUser = [...state.messages].reverse().find(item => item.role === "user")?.content.toLocaleLowerCase() ?? "";
-  const recentLoan = /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\b/.test(previousUser) ||
-    state.messages.slice(-8).some(item => item.role === "user" && /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\b/i.test(item.content));
+  const recentLoan = state.messages.slice(-8).some(item => item.role === "user" &&
+    /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang)\b/i.test(item.content));
   if (!recentLoan) return;
   let choices: string[] = [];
+  let question = "";
   if (/\b(one[- ]?time|monthly|interest|interes|tubo)\b/.test(text)) {
     if (/one[- ]?time.{0,35}monthly|monthly.{0,35}one[- ]?time|paminsan|buwanan/.test(text)) {
+      question = "Paano napagkasunduan ang interest?";
       choices = ["One-time interest", "Monthly interest"];
-    } else if (/\b(rate|percent|percentage|ilang percent|ilang porsyento)\b/.test(text)) {
-      choices = ["5%", "10%", "Iba ang rate"];
-    } else {
+    } else if (!/\b(rate|percent|percentage|porsyento)\b/.test(text)) {
+      question = "May napagkasunduang interest po ba?";
       choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
     }
-  } else if (/\b(due|repay|repayment|bayad|babayaran|kailan.*bayad)\b/.test(text)) {
-    choices = ["Next month", "May specific date", "Wala pang napagkasunduan"];
-  } else if (/\b(borrower|pangalan|sino|which person|kanino)\b/.test(text)) {
-    choices = state.borrowers.slice(0, 5).map(item => item.full_name);
+  } else if (/\b(pakiulit|repeat|could not|couldn't|hindi.*maihanda|action.*maayos|try again)\b/.test(text)) {
+    question = "Para maipagpatuloy ang loan, may napagkasunduang interest po ba?";
+    choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
   }
   if (!choices.length) return;
   const wrap = document.createElement("div");
   wrap.className = "quick-replies";
-  wrap.setAttribute("aria-label", "Quick replies");
+  if (question) {
+    const prompt = document.createElement("p");
+    prompt.className = "quick-replies-prompt";
+    prompt.textContent = question;
+    wrap.appendChild(prompt);
+  }
   for (const choice of choices) {
     const button = document.createElement("button");
     button.type = "button";
@@ -220,7 +224,6 @@ function renderQuickReplies(message: string, list: HTMLElement) {
   }
   list.appendChild(wrap);
 }
-
 function renderContextPanel(query: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list || !state.connected) return;
