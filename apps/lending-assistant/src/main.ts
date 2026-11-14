@@ -197,7 +197,8 @@ function renderContextPanel(query: string) {
     strong.textContent = title;
     const small = document.createElement("small");
     small.textContent = detail;
-    copy.append(strong, small);
+    copy.appendChild(strong);
+    copy.appendChild(small);
     const action = document.createElement("button");
     action.type = "button";
     action.className = "context-open";
@@ -209,7 +210,8 @@ function renderContextPanel(query: string) {
       if (target instanceof HTMLDetailsElement) target.open = true;
       target?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
-    item.append(copy, action);
+    item.appendChild(copy);
+    item.appendChild(action);
     item.dataset.kind = tag;
     rows.appendChild(item);
     count++;
@@ -272,7 +274,8 @@ function renderContextPanel(query: string) {
       strong.textContent = title;
       const small = document.createElement("small");
       small.textContent = detail;
-      item.append(strong, small);
+      item.appendChild(strong);
+      item.appendChild(small);
       rows.appendChild(item);
       count++;
     });
