@@ -5,7 +5,7 @@ import worker from "../workers/api/src/index";
 const db = (env as unknown as { DB: D1Database }).DB;
 
 const testEnv = {
-  ...env,
+  DB: db,
   OWNER_API_TOKEN: "d1-integration-test-secret",
   AI: { run: async () => ({ response: "{}" }) }
 };
