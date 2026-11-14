@@ -469,11 +469,11 @@ function renderProposal(proposal: AssistantProposal) {
         credentials: "same-origin",
         body: JSON.stringify({ type: proposal.type, payload: proposal.payload })
       });
-      const data = await response.json() as { actionId?: string; error?: string };
+      const data = await response.json() as { actionId?: string; error?: string; expiresInMinutes?: number };
       if (!response.ok || !data.actionId) throw new Error(data.error ?? "Could not prepare this action.");
       const notice = document.createElement("p");
       notice.className = "proposal-notice";
-      notice.textContent = "Review the details above. Nothing is saved until you press Confirm and save.";
+      notice.textContent = "Awaiting your approval · expires in " + (data.expiresInMinutes ?? 15) + " minutes. Nothing is saved yet.";
       const confirm = document.createElement("button");
       confirm.className = "proposal-confirm";
       confirm.textContent = "Confirm and save";
@@ -496,9 +496,33 @@ function renderProposal(proposal: AssistantProposal) {
           confirm.textContent = "Try confirmation again";
         }
       });
+      const cancel = document.createElement("button");
+      cancel.className = "proposal-cancel";
+      cancel.textContent = "Cancel review";
+      cancel.addEventListener("click", async () => {
+        cancel.disabled = true;
+        confirm.disabled = true;
+        cancel.textContent = "Cancelling…";
+        try {
+          const result = await fetch("/api/actions/" + encodeURIComponent(data.actionId!) + "/cancel", {
+            method: "POST", credentials: "same-origin"
+          });
+          const resultData = await result.json() as { error?: string; status?: string };
+          if (!result.ok || resultData.status !== "cancelled") throw new Error(resultData.error ?? "Could not cancel this review.");
+          notice.textContent = "Cancelled. Nothing was saved.";
+          confirm.remove();
+          cancel.remove();
+        } catch (error) {
+          notice.textContent = error instanceof Error ? error.message : "Cancellation failed. Check the action status before retrying.";
+          cancel.disabled = false;
+          confirm.disabled = false;
+          cancel.textContent = "Cancel review";
+        }
+      });
       prepare.remove();
       card.appendChild(notice);
       card.appendChild(confirm);
+      card.appendChild(cancel);
     } catch (error) {
       prepare.disabled = false;
       prepare.textContent = error instanceof Error ? error.message : "Try again";
