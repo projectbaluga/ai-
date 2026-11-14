@@ -240,6 +240,24 @@ function modelOutputDiagnostics(raw: unknown): JsonObject {
   return { outputType: Array.isArray(raw) ? "array" : typeof raw, outputKeys: outer ? Object.keys(outer).slice(0, 12) : [], candidateType: Array.isArray(candidate) ? "array" : typeof candidate, candidateLength: typeof candidate === "string" ? candidate.length : null };
 }
 
+function modelTextOutput(raw: unknown): string | null {
+  let candidate = raw;
+  for (let depth = 0; depth < 3 && isRecord(candidate); depth++) {
+    if ("response" in candidate) candidate = candidate.response;
+    else if ("output_text" in candidate) candidate = candidate.output_text;
+    else if ("output" in candidate) candidate = candidate.output;
+    else if ("result" in candidate && isRecord(candidate.result)) candidate = candidate.result;
+    else break;
+  }
+  return typeof candidate === "string" && candidate.trim().length > 0
+    ? candidate.trim().slice(0, 4000)
+    : null;
+}
+
+function isPotentialWriteRequest(message: string): boolean {
+  return /\b(pautang|magpautang|nagpautang|utang|lend|lending|loan|bayad|magbayad|nagbayad|payment|record(?:ing)?|paki\s+lista|add\s+(?:a\s+)?borrower|create\s+(?:a\s+)?borrower|update\s+(?:a\s+)?borrower|archive\s+(?:a\s+)?borrower|change\s+(?:the\s+)?interest)\b/i.test(message);
+}
+
 
 function searchTermsFromMessages(messages: AssistantMessage[]): string[] {
   const ignored = new Set([
@@ -321,10 +339,43 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   const requestId = crypto.randomUUID();
   try {
     const modelResult = await runLendingAssistantModel(env.AI, systemPrompt, messages);
-    const parsed = parseAssistantOutput(modelResult);
+    let parsed = parseAssistantOutput(modelResult);
+
+    // Plain text is safe to accept only for non-transactional conversation.
+    // Requests that may create or change lending records must return the
+    // structured schema and continue through backend validation/confirmation.
+    const lastUserMessage = messages[messages.length - 1].content;
+    const firstPlainText = modelTextOutput(modelResult);
+    if (!parsed && firstPlainText && !firstPlainText.includes("{") && !isPotentialWriteRequest(lastUserMessage)) {
+      return json({
+        intent: "answer_question",
+        message: firstPlainText,
+        proposedActions: [],
+        needsClarification: false
+      });
+    }
+
+    let retryAttempted = false;
+    let diagnosticOutput = modelResult;
     if (!parsed) {
-      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", ...modelOutputDiagnostics(modelResult) }));
-      return json({ error: "AI returned a response in an unsupported format. Please try again.", requestId }, 502);
+      retryAttempted = true;
+      const retryPrompt = systemPrompt + " IMPORTANT FORMAT RETRY: Your previous response did not match the required schema. Answer the user's original request again. Return exactly one valid JSON object with all four required keys: intent, message, proposedActions, needsClarification. Do not include Markdown, explanations, or text outside JSON. For ordinary conversation use intent answer_question and proposedActions []. For any lending action, include only a fully specified proposal and set requiresConfirmation to true. If details are missing, ask a clarification question and propose no action. Never claim that a record was saved.";
+      diagnosticOutput = await runLendingAssistantModel(env.AI, retryPrompt, messages);
+      parsed = parseAssistantOutput(diagnosticOutput);
+      const retryPlainText = modelTextOutput(diagnosticOutput);
+      if (!parsed && retryPlainText && !retryPlainText.includes("{") && !isPotentialWriteRequest(lastUserMessage)) {
+        return json({
+          intent: "answer_question",
+          message: retryPlainText,
+          proposedActions: [],
+          needsClarification: false
+        });
+      }
+    }
+
+    if (!parsed) {
+      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, ...modelOutputDiagnostics(diagnosticOutput) }));
+      return json({ error: "AI could not format a safe response. Please try again.", requestId }, 502);
     }
     return json(parsed);
   } catch (error) {
