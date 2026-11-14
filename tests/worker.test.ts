@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import worker, { parseAssistantOutput } from "../workers/api/src/index";
+import worker, { isLendingOverviewRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
 import { buildLendingAssistantSystemPrompt } from "../workers/api/src/lending-assistant-prompt";
 
 let loginAttempts = 0;
@@ -30,6 +30,17 @@ const env = {
 const authorized = { authorization: "Bearer test-secret" };
 
 describe("API worker", () => {
+  it("keeps a read-only lending overview from reopening an interest-terms conversation", () => {
+    expect(isLendingOverviewRequest("Show my lending overview")).toBe(true);
+    expect(isLendingOverviewRequest("How do I calculate interest?")).toBe(false);
+    expect(removeInterestClarificationFromOverview(
+      "Narito ang overview ng loans.\\n\\nAno ang napagkasunduan ninyo sa interest?"
+    )).toBe("Narito ang overview ng loans.");
+    expect(removeInterestClarificationFromOverview(
+      "Narito ang overview ng loans.\\n\\nMay gusto ka bang i-update?"
+    )).toBe("Narito ang overview ng loans.\\n\\nMay gusto ka bang i-update?");
+  });
+
   it("combines a new borrower registration and loan into one validated approval", () => {
     const parsed = parseAssistantOutput({
       intent: "prepare_action",
