@@ -1,31 +1,162 @@
-name: Deploy API Worker
+name: Deploy Worker
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  check:
+    name: CI Checks
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: workers/api
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22
-      - name: Install and verify
-        working-directory: .
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run typecheck, tests, and build
+        run: npm run check
+
+  deploy:
+    name: Deploy Worker to Production
+    needs: check
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify required secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OWNER_API_TOKEN: ${{ secrets.OWNER_API_TOKEN }}
         run: |
-          npm ci
-          npm run check
-      - uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65 # v3.14.1
+          MISSING=""
+          [ -z "$CLOUDFLARE_API_TOKEN" ] && MISSING="$MISSING CLOUDFLARE_API_TOKEN"
+          [ -z "$CLOUDFLARE_ACCOUNT_ID" ] && MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
+          [ -z "$OWNER_API_TOKEN" ] && MISSING="$MISSING OWNER_API_TOKEN"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required GitHub secrets:$MISSING"
+            echo "::error::Configure them in Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          echo "All required secrets are present."
+
+      - name: List pending D1 migrations
+        uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
           workingDirectory: workers/api
+          command: d1 migrations list ai-workspace-db --remote
+
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/api
+          command: d1 migrations apply ai-workspace-db --remote
+
+      - name: Query D1 tables
+        id: d1-tables
+        uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/api
+          command: |-
+            d1 execute ai-workspace-db --remote --json --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+
+      - name: Verify D1 tables exist
+        env:
+          D1_OUTPUT: ${{ steps.d1-tables.outputs.command-output }}
+        run: |
+          # d1 execute --json serializes a QueryResult[] — an array where each
+          # item contains its own "results" array. Extract table names from
+          # .[].results[]?.name. Fall back to a single object with "results"
+          # if the output is not an array.
+          TABLES=$(echo "$D1_OUTPUT" | jq -r '
+            if type == "array" then
+              .[].results[]?.name
+            elif type == "object" and has("results") then
+              .results[]?.name
+            else
+              error("Unexpected JSON structure: expected array of QueryResults or object with results")
+            end
+          ' 2>/dev/null | sort)
+
+          if [ -z "$TABLES" ]; then
+            echo "::error::Failed to parse D1 query output or no tables found"
+            echo "Raw output:"
+            echo "$D1_OUTPUT"
+            exit 1
+          fi
+
+          EXPECTED_TABLES="audit_log borrowers login_rate_limits loans payments pending_actions"
+
+          MISSING=""
+          for TABLE in $EXPECTED_TABLES; do
+            if ! echo "$TABLES" | grep -qx "$TABLE"; then
+              MISSING="$MISSING $TABLE"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required tables:$MISSING"
+            echo ""
+            echo "Tables found in database:"
+            echo "$TABLES"
+            echo ""
+            echo "Expected tables:"
+            echo "$EXPECTED_TABLES"
+            exit 1
+          fi
+
+          echo "All required tables exist:"
+          echo "$TABLES"
+
+      - name: Deploy Worker (ai-workspace-api)
+        uses: cloudflare/wrangler-action@da0e0dfe58b7a431659754fdf3f186c529afbe65
+        env:
+          OWNER_API_TOKEN: ${{ secrets.OWNER_API_TOKEN }}
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/api
+          command: deploy
+          secrets: |
+            OWNER_API_TOKEN
+
+      - name: Deployment summary
+        run: |
+          echo "## Worker Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| D1 migrations | Applied |" >> $GITHUB_STEP_SUMMARY
+          echo "| D1 tables verified | Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Worker ai-workspace-api | Deployed |" >> $GITHUB_STEP_SUMMARY
+          echo "| OWNER_API_TOKEN secret | Set |" >> $GITHUB_STEP_SUMMARY
