@@ -34,11 +34,11 @@ describe("API worker", () => {
     expect(isLendingOverviewRequest("Show my lending overview")).toBe(true);
     expect(isLendingOverviewRequest("How do I calculate interest?")).toBe(false);
     expect(removeInterestClarificationFromOverview(
-      "Narito ang overview ng loans.\\n\\nAno ang napagkasunduan ninyo sa interest?"
+      "Narito ang overview ng loans. Ano ang napagkasunduan ninyo sa interest?"
     )).toBe("Narito ang overview ng loans.");
     expect(removeInterestClarificationFromOverview(
-      "Narito ang overview ng loans.\\n\\nMay gusto ka bang i-update?"
-    )).toBe("Narito ang overview ng loans.\\n\\nMay gusto ka bang i-update?");
+      "Narito ang overview ng loans. May gusto ka bang i-update?"
+    )).toBe("Narito ang overview ng loans. May gusto ka bang i-update?");
   });
 
   it("combines a new borrower registration and loan into one validated approval", () => {
