@@ -54,6 +54,17 @@ function normalizeActionPayload(type: unknown, input: unknown): { type: ActionTy
     delete payload.name;
     delete payload.contactNumber;
   }
+  if (canonicalType === "create_loan" || canonicalType === "update_loan_terms") {
+    if (payload.interestFrequency === undefined && typeof payload.interestPeriod === "string") {
+      payload.interestFrequency = payload.interestPeriod;
+    }
+    if (payload.interestPeriod === undefined && typeof payload.interestFrequency === "string") {
+      payload.interestPeriod = payload.interestFrequency === "monthly" ? "monthly" : "one_time";
+    }
+    if (canonicalType === "create_loan" && payload.repaymentFrequency === undefined) {
+      payload.repaymentFrequency = "one_time";
+    }
+  }
   return { type: canonicalType, payload };
 }
 
@@ -83,7 +94,17 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
     if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
     if (typeof payload.interestValue !== "number" || !Number.isFinite(payload.interestValue) || payload.interestValue < 0) return null;
     if (!["one_time", "monthly"].includes(String(payload.interestPeriod))) return null;
+    if (!["one_time", "daily", "weekly", "monthly", "annual"].includes(String(payload.interestFrequency))) return null;
     if (payload.interestType === "none" && payload.interestValue !== 0) return null;
+    if (payload.dueDate !== undefined && payload.dueDate !== null &&
+        (!text(payload.dueDate, 10) || !/^\\d{4}-\\d{2}-\\d{2}$/.test(payload.dueDate) ||
+         new Date(payload.dueDate + "T00:00:00Z").toISOString().slice(0, 10) !== payload.dueDate)) return null;
+    if (payload.repaymentFrequency !== undefined && !["one_time", "daily", "weekly", "biweekly", "monthly"].includes(String(payload.repaymentFrequency))) return null;
+    if (payload.repaymentTimingNote !== undefined && payload.repaymentTimingNote !== null && !text(payload.repaymentTimingNote, 240)) return null;
+    if (payload.installmentCount !== undefined && payload.installmentCount !== null &&
+        (!Number.isSafeInteger(payload.installmentCount) || (payload.installmentCount as number) <= 0)) return null;
+    if (payload.installmentAmountMinor !== undefined && payload.installmentAmountMinor !== null &&
+        (!Number.isSafeInteger(payload.installmentAmountMinor) || (payload.installmentAmountMinor as number) <= 0)) return null;
     if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
     return { type, payload };
   }
@@ -102,6 +123,7 @@ function validateAction(type: unknown, input: unknown): { type: ActionType; payl
     if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
     if (typeof payload.interestValue !== "number" || !Number.isFinite(payload.interestValue) || payload.interestValue < 0) return null;
     if (!["one_time", "monthly"].includes(String(payload.interestPeriod))) return null;
+    if (!["one_time", "daily", "weekly", "monthly", "annual"].includes(String(payload.interestFrequency))) return null;
     if (payload.interestType === "none" && payload.interestValue !== 0) return null;
     return { type, payload };
   }
@@ -403,7 +425,7 @@ async function findTargetedRecords(db: D1Database, messages: AssistantMessage[])
   const values = terms;
   const [borrowers, loans, payments] = await Promise.all([
     db.prepare(`SELECT id, full_name, phone FROM borrowers WHERE archived_at IS NULL AND (${predicates.replaceAll("search_value", "full_name")}) ORDER BY full_name LIMIT 10`).bind(...values).all(),
-    db.prepare(`SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY l.created_at DESC LIMIT 10`).bind(...values, ...values).all(),
+    db.prepare(`SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.interest_frequency, l.due_date, l.repayment_timing_note, l.repayment_frequency, l.installment_count, l.installment_amount_minor, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY l.created_at DESC LIMIT 10`).bind(...values, ...values).all(),
     db.prepare(`SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id WHERE (${predicates.replaceAll("search_value", "b.full_name")}) OR ${terms.map(() => "instr(lower(p.id), lower(?)) > 0 OR instr(lower(l.id), lower(?)) > 0").join(" OR ")} ORDER BY p.paid_at DESC LIMIT 10`).bind(...values, ...terms.flatMap(term => [term, term])).all()
   ]);
   return {
@@ -530,7 +552,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     try {
       const [borrowerRows, loanRows, paymentRows] = await Promise.all([
         env.DB.prepare("SELECT id, full_name, phone FROM borrowers WHERE archived_at IS NULL ORDER BY full_name LIMIT 30").all<{ id: string; full_name: string }>(),
-        env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.interest_frequency, l.due_date, l.repayment_timing_note, l.repayment_frequency, l.installment_count, l.installment_amount_minor, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
         env.DB.prepare("SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id ORDER BY p.paid_at DESC LIMIT 30").all<Record<string, unknown>>()
       ]);
       recordContext = { available: true, borrowers: borrowerRows.results ?? [], loans: loanRows.results ?? [], recentPayments: paymentRows.results ?? [] };
@@ -735,8 +757,8 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
         await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ?").bind(actionId).run();
         return json({ error: "Active loan not found. No terms were changed." }, 404);
       }
-      statement = env.DB.prepare("UPDATE loans SET interest_type = ?, interest_value = ?, interest_period = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(payload.interestType, payload.interestValue, payload.interestPeriod, entityId);
+      statement = env.DB.prepare("UPDATE loans SET interest_type = ?, interest_value = ?, interest_period = ?, interest_frequency = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(payload.interestType, payload.interestValue, payload.interestPeriod, payload.interestFrequency, entityId);
     } else if (claim.action_type === "create_loan") {
       entityType = "loan";
       let borrowerId = text(payload.borrowerId, 80) ? payload.borrowerId : null;
@@ -767,8 +789,8 @@ async function confirmAction(actionId: string, env: Env): Promise<Response> {
       }
       if (!borrowerId) throw new Error("Loan borrower is missing.");
       statement = env.DB.prepare(
-        "INSERT INTO loans (id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      ).bind(entityId, borrowerId, payload.principalMinor, payload.currency ?? "PHP", payload.interestType, payload.interestValue, payload.interestPeriod, payload.notes ?? null);
+        "INSERT INTO loans (id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, notes, due_date, repayment_timing_note, repayment_frequency, installment_count, installment_amount_minor, interest_frequency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(entityId, borrowerId, payload.principalMinor, payload.currency ?? "PHP", payload.interestType, payload.interestValue, payload.interestPeriod, payload.notes ?? null, payload.dueDate ?? null, payload.repaymentTimingNote ?? null, payload.repaymentFrequency ?? "one_time", payload.installmentCount ?? null, payload.installmentAmountMinor ?? null, payload.interestFrequency ?? payload.interestPeriod);
     } else {
       entityType = "payment";
       const loan = await env.DB.prepare("SELECT id FROM loans WHERE id = ? AND status = 'active'")
@@ -929,7 +951,7 @@ export default {
     }
     const collections: Record<string, string> = {
       "/api/borrowers": "SELECT id, full_name, phone, notes, created_at, updated_at FROM borrowers WHERE archived_at IS NULL ORDER BY full_name",
-      "/api/loans": "SELECT id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, status, notes, created_at FROM loans ORDER BY created_at DESC",
+      "/api/loans": "SELECT id, borrower_id, principal_minor, currency, interest_type, interest_value, interest_period, interest_frequency, due_date, repayment_timing_note, repayment_frequency, installment_count, installment_amount_minor, status, notes, created_at FROM loans ORDER BY created_at DESC",
       "/api/payments": "SELECT id, loan_id, amount_minor, paid_at, notes, created_at FROM payments ORDER BY paid_at DESC",
       "/api/activity": "SELECT id, action, entity_type, entity_id, details_json, created_at FROM audit_log ORDER BY created_at DESC LIMIT 100"
     };
