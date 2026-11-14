@@ -9,7 +9,7 @@ describe("transaction conversation state", () => {
       { role: "assistant", content: "What interest terms did you agree on?" },
       { role: "user", content: "Cancel that loan." }
     ];
-    expect(isExplicitTransactionCancellation("Huwag na po."));
+    expect(isExplicitTransactionCancellation("Huwag na po.")).toBe(true);
     expect(buildTransactionConversationState(messages)).toMatchObject({
       status: "cancelled",
       cancelled: true,
