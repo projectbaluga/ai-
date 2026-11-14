@@ -73,6 +73,7 @@ function renderPage() {
   if (assistantFab) (assistantFab as HTMLElement).hidden = isAssistantHome;
   target.classList.toggle("assistant-home", isAssistantHome);
   if (isAssistantHome) {
+    document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === state.page));
     target.innerHTML = `<div class="ai-home-intro"><p class="eyebrow">YOUR AI LENDING WORKSPACE</p><h1>What would you like to do?</h1><p class="muted">Magtanong, maghanap ng records, mag-review ng payments, o maghanda ng transaction. You can speak or type naturally.</p><div class="ai-suggestions"><button data-prompt="Show my lending overview">Show lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Show recent payments">Recent payments</button><button data-prompt="Show my active loans">Active loans</button></div></div>`;
     target.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach(b => b.addEventListener("click", () => { const input = document.querySelector<HTMLTextAreaElement>("#chat-input"); if (input) { input.value = b.dataset.prompt ?? ""; input.focus(); } }));
     return;
@@ -220,7 +221,7 @@ function renderContextPanel(query: string) {
   else if (has("activity", "history", "kasaysayan", "recent")) kind = "activity";
   else if (has("overview", "dashboard", "summary", "kabuuan", "workspace")) kind = "overview";
   else {
-    const named = state.borrowers.filter(b => q.includes(b.full_name.toLocaleLowerCase()));
+    const named = state.borrowers.filter(b => nameMatches(b.full_name));
     if (named.length) kind = "borrowers";
   }
   if (kind === "borrowers") {
