@@ -450,10 +450,10 @@ async function findTargetedRecords(db: D1Database, messages: AssistantMessage[])
 }
 
 export function buildFinancialLookupReply(message: string, language: SupportedLanguage, targetedMatches: JsonObject): AssistantResponse | null {
-  if (!/\\b(?:magkano|bayarin|balance|outstanding|total\\s+due|amount\\s+due|how\\s+much|payoff)\\b/i.test(message)) return null;
+  if (!/\b(?:magkano|bayarin|balance|outstanding|total\s+due|amount\s+due|how\s+much|payoff)\b/i.test(message)) return null;
   if (targetedMatches.searched !== true || !Array.isArray(targetedMatches.loans)) return null;
   const normalize = (value: string) => value.toLocaleLowerCase().normalize("NFD")
-    .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
   const query = normalize(message);
   const matches = (targetedMatches.loans as unknown[]).filter((loan): loan is JsonObject =>
     isRecord(loan) && text(loan.borrower_name, 160) && query.includes(normalize(loan.borrower_name))
@@ -467,7 +467,7 @@ export function buildFinancialLookupReply(message: string, language: SupportedLa
       ? String(loan.interest_value) + "% " + cadence + " interest"
       : "fixed interest (stored value: " + String(loan.interest_value) + ")";
   };
-  const english = language === "en" || /\\b(?:how much|what is the amount|outstanding balance|total due)\\b/i.test(message);
+  const english = language === "en" || /\b(?:how much|what is the amount|outstanding balance|total due)\b/i.test(message);
   if (matches.length > 1) {
     const lines = matches.slice(0, 5).map(loan =>
       "- " + String(loan.borrower_name) + ": principal " + peso(Number(loan.principal_minor)) + ", " + interestLabel(loan)
@@ -475,8 +475,8 @@ export function buildFinancialLookupReply(message: string, language: SupportedLa
     return {
       intent: "answer_question",
       message: english
-        ? "I found more than one loan for this borrower. " + lines.join("\\n") + "\\nWhich loan do you mean?"
-        : "May higit sa isang loan record para sa borrower na ito. " + lines.join("\\n") + "\\nAling loan po ang tinutukoy ninyo?",
+        ? "I found more than one loan for this borrower. " + lines.join("\n") + "\nWhich loan do you mean?"
+        : "May higit sa isang loan record para sa borrower na ito. " + lines.join("\n") + "\nAling loan po ang tinutukoy ninyo?",
       proposedActions: [], needsClarification: true
     };
   }
