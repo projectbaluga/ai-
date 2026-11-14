@@ -175,7 +175,8 @@ function renderProposal(proposal: AssistantProposal) {
         }
       });
       prepare.remove();
-      card.append(notice, confirm);
+      card.appendChild(notice);
+      card.appendChild(confirm);
     } catch (error) {
       prepare.disabled = false;
       prepare.textContent = error instanceof Error ? error.message : "Try again";
