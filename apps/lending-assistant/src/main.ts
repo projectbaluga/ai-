@@ -1,5 +1,4 @@
 import "./style.css";
-import { borrowerFormMarkup, loanFormMarkup, paymentFormMarkup, bindRecordForms } from "./record-forms";
 import { reportsMarkup, bindReports } from "./reports";
 
 type Borrower = { id: string; full_name: string; phone?: string | null; notes?: string | null };
@@ -96,23 +95,15 @@ function renderPage() {
       <div class="section-heading"><div><p class="eyebrow">WORKSPACE</p><h2>Recent activity</h2></div><button class="text-button" data-page="activity">View all →</button></div>
       <section class="activity-card">${state.connected && state.payments.length ? state.payments.slice(0,5).map((p) => `<div class="activity-row"><span class="activity-icon">₱</span><div><strong>Payment recorded</strong><small>${new Date(p.paid_at).toLocaleDateString("en-PH")}</small></div><b>${peso(p.amount_minor)}</b></div>`).join("") : `<div class="empty-state"><span>◷</span><strong>No recent activity to show</strong><p>${state.connected ? "New payments and loan updates will appear here." : "Your real transactions will appear here after secure connection."}</p></div>`}</section>`;
   } else if (state.page === "borrowers") {
-    target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">PEOPLE YOU LEND TO</p><h1>Borrowers</h1><p class="muted">Manage borrower details and find records with your AI assistant.</p></div></div><section class="list-card">${state.connected && state.borrowers.length ? state.borrowers.map(b => `<details class="record-detail" data-record-id="${escapeHtml(b.id)}"><summary class="record-row"><span class="record-avatar">${escapeHtml(b.full_name.slice(0,1).toUpperCase())}</span><span class="record-main"><strong>${escapeHtml(b.full_name)}</strong><small>${escapeHtml(b.phone ?? "No phone number")} · ${state.loans.filter(l => l.borrower_id === b.id).length} loan(s)</small></span><span class="detail-hint">View details⌄</span></summary><div class="record-detail-body">${borrowerDetailsMarkup(b)}<div class="record-actions"><button type="button" data-edit-borrower="${escapeHtml(b.id)}">Edit borrower</button><button type="button" data-archive-borrower="${escapeHtml(b.id)}">Archive</button></div></div></details>`).join("") : empty("Borrower records will appear here after secure owner login.")}</section>`;
+    target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">PEOPLE YOU LEND TO</p><h1>Borrowers</h1><p class="muted">Manage borrower details and find records with your AI assistant.</p></div></div><section class="list-card">${state.connected && state.borrowers.length ? state.borrowers.map(b => `<details class="record-detail" data-record-id="${escapeHtml(b.id)}"><summary class="record-row"><span class="record-avatar">${escapeHtml(b.full_name.slice(0,1).toUpperCase())}</span><span class="record-main"><strong>${escapeHtml(b.full_name)}</strong><small>${escapeHtml(b.phone ?? "No phone number")} · ${state.loans.filter(l => l.borrower_id === b.id).length} loan(s)</small></span><span class="detail-hint">View details⌄</span></summary><div class="record-detail-body">${borrowerDetailsMarkup(b)}</div></details>`).join("") : empty("Borrower records will appear here after secure owner login.")}</section>`;
   } else if (state.page === "loans") {
-    target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">LENDING PORTFOLIO</p><h1>Loans</h1><p class="muted">Review principal amounts and loan status.</p></div></div><section class="list-card">${state.connected && state.loans.length ? state.loans.map(l => `<details class="record-detail" data-record-id="${escapeHtml(l.id)}"><summary class="record-row"><span class="record-avatar loan-avatar">₱</span><span class="record-main"><strong>${peso(l.principal_minor)}</strong><small>${escapeHtml(state.borrowers.find(b => b.id === l.borrower_id)?.full_name ?? "Borrower record unavailable")} · ${escapeHtml(l.status)}</small></span><span class="status-tag">${escapeHtml(l.status)}</span><span class="detail-hint">View details⌄</span></summary><div class="record-detail-body">${loanDetailsMarkup(l)}<div class="record-actions"><button type="button" data-edit-loan="${escapeHtml(l.id)}">Edit interest terms</button></div></div></details>`).join("") : empty("Loan records will appear here after secure owner login.")}</section>`;
+    target.innerHTML = `<div class="page-intro"><div><p class="eyebrow">LENDING PORTFOLIO</p><h1>Loans</h1><p class="muted">Review principal amounts and loan status.</p></div></div><section class="list-card">${state.connected && state.loans.length ? state.loans.map(l => `<details class="record-detail" data-record-id="${escapeHtml(l.id)}"><summary class="record-row"><span class="record-avatar loan-avatar">₱</span><span class="record-main"><strong>${peso(l.principal_minor)}</strong><small>${escapeHtml(state.borrowers.find(b => b.id === l.borrower_id)?.full_name ?? "Borrower record unavailable")} · ${escapeHtml(l.status)}</small></span><span class="status-tag">${escapeHtml(l.status)}</span><span class="detail-hint">View details⌄</span></summary><div class="record-detail-body">${loanDetailsMarkup(l)}</div></details>`).join("") : empty("Loan records will appear here after secure owner login.")}</section>`;
   } else if (state.page === "reports") {
     target.innerHTML = reportsMarkup();
     bindReports(target);
   } else {
     const rows = state.activity.map(a => "<div class=\"record-row\"><span class=\"record-avatar loan-avatar\">↻</span><div><strong>" + escapeHtml(a.action.replaceAll("_", " ")) + " · " + escapeHtml(a.entity_type) + "</strong><small>" + new Date(a.created_at).toLocaleString("en-PH") + " · Ref: " + escapeHtml(a.entity_id.slice(0,8)) + "</small></div></div>").join("");
     target.innerHTML = "<div class=\"page-intro\"><div><p class=\"eyebrow\">AUDIT TRAIL</p><h1>Activity</h1><p class=\"muted\">Confirmed changes recorded by the system.</p></div></div><section class=\"list-card\">" + (state.connected && state.activity.length ? rows : empty("Confirmed activity will appear here after secure owner login.")) + "</section>";
-  }
-  if (state.page === "borrowers") {
-    target.insertAdjacentHTML("afterbegin", borrowerFormMarkup());
-    bindRecordForms(target, loadData, state.borrowers, state.loans);
-  }
-  if (state.page === "loans") {
-    target.insertAdjacentHTML("afterbegin", loanFormMarkup(state.borrowers) + paymentFormMarkup(state.loans, state.borrowers));
-    bindRecordForms(target, loadData);
   }
   target.querySelectorAll<HTMLElement>("[data-page]").forEach(el => el.addEventListener("click", () => { state.page = el.dataset.page ?? "home"; renderPage(); }));
 }
@@ -233,18 +224,18 @@ function renderContextPanel(query: string) {
   }
   if (kind === "borrowers") {
     heading.textContent = "Borrower records";
-    const generic = has("borrower", "borrowers", "customer", "kliyente", "tao", "sino", "lahat", "all", "list", "show", "find");
-    const matches = state.borrowers.filter(b => generic || q.includes(b.full_name.toLocaleLowerCase()));
+    const namedMatches = state.borrowers.filter(b => q.includes(b.full_name.toLocaleLowerCase()));
+    const generic = has("lahat", "all", "list", "show", "find") && !namedMatches.length;
+    const matches = namedMatches.length ? namedMatches : generic || has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") ? state.borrowers : [];
     matches.slice(0, 12).forEach(b => {
       const related = state.loans.filter(l => l.borrower_id === b.id);
       addRow(b.full_name, (b.phone || "No phone recorded") + " · " + related.length + " linked loan(s)", "borrowers", b.id, "borrower");
     });
   } else if (kind === "loans") {
     heading.textContent = "Loan records";
-    const matches = state.loans.filter(l => {
-      const borrower = state.borrowers.find(b => b.id === l.borrower_id);
-      return has("loan", "loans", "pautang", "utang record", "active loan", "lahat", "all", "list", "show") || !!borrower && q.includes(borrower.full_name.toLocaleLowerCase());
-    });
+    const namedBorrowers = state.borrowers.filter(b => q.includes(b.full_name.toLocaleLowerCase()));
+    const generic = !namedBorrowers.length && (has("lahat", "all", "list", "show", "active") || has("loan", "loans", "pautang", "utang record"));
+    const matches = state.loans.filter(l => generic || namedBorrowers.some(b => b.id === l.borrower_id));
     matches.slice(0, 12).forEach(l => {
       const borrower = state.borrowers.find(b => b.id === l.borrower_id);
       addRow(peso(l.principal_minor) + " · " + l.status, (borrower?.full_name ?? "Borrower unavailable") + " · " + l.interest_type + " interest", "loans", l.id, "loan");
