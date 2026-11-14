@@ -212,6 +212,23 @@ describe("API worker", () => {
     expect(env.AI.run).toHaveBeenCalledOnce();
   });
 
+  it("accepts conversational prose even when it contains braces or JSON-like examples", async () => {
+    const reply = "Ganito ang sample format: { pangalan: borrower, amount: napagkasunduan }. Hindi ito transaction at wala akong ise-save.";
+    env.AI.run.mockImplementationOnce(async () => ({ response: reply }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "Paano ang format ng loan record?" }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "answer_question",
+      message: reply,
+      proposedActions: [],
+      needsClarification: false
+    });
+    expect(env.AI.run).toHaveBeenCalledOnce();
+  });
+
   it("answers loan-process how-to questions naturally without treating them as write requests", async () => {
     const reply = "Para mag-process ng loan: piliin muna ang borrower, ilagay ang principal at napagkasunduang interest terms, i-review ang due dates, at kumpirmahin bago i-save.";
     env.AI.run.mockImplementationOnce(async () => ({ response: reply }));
