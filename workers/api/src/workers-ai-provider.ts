@@ -19,12 +19,12 @@ export async function runLendingAssistantModel(
       { role: "system", content: systemPrompt },
       ...messages
     ],
-    max_tokens: 1200,
+    max_tokens: 2400,
     temperature: 0.35,
-    // Match the fast, direct-response behavior of the ProjectBaluga website assistant.
-    // This is a model hint and may be ignored by providers that do not support it.
+    // Allow Gemma 4 to reason through multi-turn context and financial intent before answering.
+    // The API response remains concise; reasoning is not shown to the owner.
     chat_template_kwargs: {
-      enable_thinking: false
+      enable_thinking: true
     }
   });
 }
