@@ -177,9 +177,51 @@ describe("API worker", () => {
     expect(await response.json()).toEqual(payload);
   });
 
+  it("accepts plain text for ordinary non-transactional conversation", async () => {
+    env.AI.run.mockImplementationOnce(async () => ({ response: "Kumusta po! Paano kita matutulungan?" }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "Hello!" }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      intent: "answer_question",
+      message: "Kumusta po! Paano kita matutulungan?",
+      proposedActions: [],
+      needsClarification: false
+    });
+    expect(env.AI.run).toHaveBeenCalledOnce();
+  });
+
+  it("retries malformed output once for a lending action and still requires a structured proposal", async () => {
+    const proposal = {
+      intent: "prepare_action",
+      message: "Ihahanda ko ang borrower record para ma-review mo.",
+      proposedActions: [{
+        type: "create_borrower",
+        payload: { fullName: "Sir Erdz" },
+        summary: "Magdagdag ng borrower na Sir Erdz",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "I have added Sir Erdz." }))
+      .mockImplementationOnce(async () => ({ response: JSON.stringify(proposal) }));
+    const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+      method: "POST", headers: { ...authorized, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "Paki lista si Sir Erdz bilang borrower." }] })
+    }), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(proposal);
+    expect(env.AI.run).toHaveBeenCalledTimes(2);
+  });
+
   it("returns a traceable 502 for malformed model output without logging user content", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    env.AI.run.mockImplementationOnce(async () => ({ response: "not valid JSON" }));
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: '{"intent": invalid}' }))
+      .mockImplementationOnce(async () => ({ response: '{"intent": invalid}' }));
     const response = await worker.fetch(new Request("https://example.test/api/assistant", {
       method: "POST", headers: { ...authorized, "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", content: "private test message" }] })
@@ -187,6 +229,7 @@ describe("API worker", () => {
     expect(response.status).toBe(502);
     expect(await response.json()).toMatchObject({ error: expect.stringContaining("unsupported format"), requestId: expect.any(String) });
     expect(errorSpy).toHaveBeenCalledOnce();
+    expect(env.AI.run).toHaveBeenCalledTimes(2);
     expect(String(errorSpy.mock.calls[0][1])).not.toContain("private test message");
     errorSpy.mockRestore();
   });
