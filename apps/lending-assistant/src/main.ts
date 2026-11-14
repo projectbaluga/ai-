@@ -199,6 +199,9 @@ function renderQuickReplies(message: string, list: HTMLElement) {
   const recentUserMessages = state.messages.slice(-10).filter(item => item.role === "user");
   const recentLoan = recentUserMessages.some(item =>
     /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang|pinautang)\b/i.test(item.content));
+  const recentNoInterest = recentUserMessages.some(item =>
+    /\b(walang\s+(?:interest|interes|tubo)|no\s+interest|interest[- ]?free)\b/i.test(item.content));
+  const asksRepaymentSchedule = /\b(repayment schedule|payment schedule|schedule ng bayad|paraan ng bayad|paano.*bayaran|how.*repay|how.*pay back|hulog)\b/i.test(text);
   const asksInterestType = /\b(one[- ]?time|monthly|monthly interest|one-time interest|paminsan|buwanan)\b/i.test(text) &&
     /\b(interest|interes|tubo|rate|porsyento)\b/i.test(text);
   const asksInterestExistence = /\b(interest[- ]?free|interest|interes|tubo)\b/i.test(text) &&
@@ -210,7 +213,10 @@ function renderQuickReplies(message: string, list: HTMLElement) {
   let choices: string[] = [];
   let question = "";
 
-  if (asksInterestType && /\bone[- ]?time.{0,45}(or|\/|versus|vs\.?).{0,45}monthly|monthly.{0,45}(or|\/|versus|vs\.?).{0,45}one[- ]?time|one[- ]?time.*monthly|monthly.*one[- ]?time|paminsan.*buwanan|buwanan.*paminsan/i.test(text)) {
+  if (asksRepaymentSchedule) {
+    question = "Piliin ang napagkasunduang paraan ng bayad:";
+    choices = ["Isang bayaran (one-time)", "Araw-araw", "Lingguhan", "Kada dalawang linggo", "Buwanan"];
+  } else if (asksInterestType && /\bone[- ]?time.{0,45}(or|\/|versus|vs\.?).{0,45}monthly|monthly.{0,45}(or|\/|versus|vs\.?).{0,45}one[- ]?time|one[- ]?time.*monthly|monthly.*one[- ]?time|paminsan.*buwanan|buwanan.*paminsan/i.test(text)) {
     question = "Piliin ang napagkasunduang interest:";
     choices = ["One-time interest", "Monthly interest"];
   } else if (asksInterestExistence && !/\b(one[- ]?time|monthly)\b/i.test(text)) {
@@ -222,7 +228,7 @@ function renderQuickReplies(message: string, list: HTMLElement) {
   } else if (asksCorrection) {
     question = "Ano ang gusto ninyong gawin?";
     choices = ["Panatilihin ang detalye", "Baguhin ang detalye", "Kanselahin muna"];
-  } else if (recentLoan && /\b(pakiulit|repeat|could not|couldn't|hindi.*maihanda|action.*maayos|try again|please provide.*details)\b/i.test(text)) {
+  } else if (recentLoan && !recentNoInterest && /\b(pakiulit|repeat|could not|couldn't|hindi.*maihanda|action.*maayos|try again|please provide.*details)\b/i.test(text)) {
     question = "Para maipagpatuloy ang loan, ano ang napagkasunduan sa interest?";
     choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
   }
@@ -230,6 +236,8 @@ function renderQuickReplies(message: string, list: HTMLElement) {
   if (!choices.length) return;
   const wrap = document.createElement("div");
   wrap.className = "quick-replies";
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", question || "Suggested answers");
   if (question) {
     const prompt = document.createElement("p");
     prompt.className = "quick-replies-prompt";
@@ -245,6 +253,7 @@ function renderQuickReplies(message: string, list: HTMLElement) {
       const input = document.querySelector<HTMLTextAreaElement>("#chat-input");
       const form = document.querySelector<HTMLFormElement>("#chat-form");
       if (!input || !form || state.busy || state.actionBusy) return;
+      wrap.querySelectorAll<HTMLButtonElement>("button").forEach(item => { item.disabled = true; });
       input.value = choice;
       form.requestSubmit();
     });
@@ -252,7 +261,6 @@ function renderQuickReplies(message: string, list: HTMLElement) {
   }
   list.appendChild(wrap);
 }
-
 function renderContextPanel(query: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list || !state.connected) return;
