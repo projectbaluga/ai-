@@ -163,7 +163,7 @@ function bindShell() {
 }
 
 function openAssistant() { state.page = "assistant"; renderPage(); document.querySelector<HTMLTextAreaElement>("#chat-input")?.focus(); }
-function closeAssistant() { document.querySelector<HTMLElement>("#assistant-panel")!.hidden = true; }
+function closeAssistant() { state.page = "home"; renderPage(); }
 
 function addMessage(role: "user" | "assistant", content: string) {
   state.messages.push({ role, content });
