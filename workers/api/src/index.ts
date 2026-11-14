@@ -189,9 +189,10 @@ function searchTermsFromMessages(messages: AssistantMessage[]): string[] {
     "sino", "ano", "nasaan", "lahat", "yung", "iyong", "akin", "ko", "mo", "po",
     "borrower", "borrowers", "loan", "loans", "payment", "payments", "record", "records"
   ]);
-  return [...new Set(message.normalize("NFC").match(/[\p{L}\p{N}-]{3,}/gu) ?? [])]
+  const recentUserText = messages.filter(message => message.role === "user").slice(-4).reverse().map(message => message.content).join(" ");
+  return [...new Set(recentUserText.normalize("NFC").match(/[\\p{L}\\p{N}-]{3,}/gu) ?? [])]
     .filter(term => !ignored.has(term.toLocaleLowerCase()))
-    .slice(0, 5);
+    .slice(0, 8);
 }
 
 async function findTargetedRecords(db: D1Database, message: string): Promise<JsonObject> {
