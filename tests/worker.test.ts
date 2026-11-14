@@ -25,6 +25,34 @@ describe("API worker", () => {
     expect(await response.json()).toEqual({ ok: true, service: "ai-workspace-api" });
   });
 
+
+  it("creates an HttpOnly signed owner session after a valid passphrase", async () => {
+    const login = await worker.fetch(new Request("https://example.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://example.test" },
+      body: JSON.stringify({ password: "test-secret" })
+    }), env);
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get("set-cookie");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("SameSite=Strict");
+    expect(cookie).toContain("Secure");
+    const session = await worker.fetch(new Request("https://example.test/api/auth/session", {
+      headers: { cookie: cookie!.split(";")[0] }
+    }), env);
+    expect(session.status).toBe(200);
+    expect(await session.json()).toMatchObject({ authenticated: true });
+  });
+
+  it("rejects an incorrect owner passphrase", async () => {
+    const response = await worker.fetch(new Request("https://example.test/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "wrong-password" })
+    }), env);
+    expect(response.status).toBe(401);
+  });
+
   it("protects API routes", async () => {
     const response = await worker.fetch(new Request("https://example.test/api"), env);
     expect(response.status).toBe(401);
