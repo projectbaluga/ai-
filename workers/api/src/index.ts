@@ -341,6 +341,7 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
 }
 
 function isRecordLookupRequest(message: string): boolean {
+  if (/\b(paano|how\s+(?:do\s+i|to|can\s+i)|what\s+is|what\s+are|why|explain|ipaliwanag|ano\s+ang)\b/i.test(message)) return false;
   return /\b(?:find|search|show|list|view|look\s*up|get|check|hanapin|pakita|ipakita|sino|nasaan|overview|summary|recent\s+payments|active\s+loans|borrower|borrowers|loan\s+records|payment\s+records)\b/i.test(message);
 }
 
@@ -439,7 +440,6 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     // Plain text is safe to accept only for non-transactional conversation.
     // Requests that may create or change lending records must return the
     // structured schema and continue through backend validation/confirmation.
-    const lastUserMessage = messages[messages.length - 1].content;
     const firstPlainText = modelTextOutput(modelResult);
     if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(messages)) {
       return json({
@@ -458,7 +458,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       diagnosticOutput = await runLendingAssistantModel(env.AI, retryPrompt, messages);
       parsed = parseAssistantOutput(diagnosticOutput);
       const retryPlainText = modelTextOutput(diagnosticOutput);
-      if (!parsed && retryPlainText && !looksLikeStructuredModelOutput(retryPlainText) && !isPotentialWriteRequest(lastUserMessage)) {
+      if (!parsed && retryPlainText && !looksLikeStructuredModelOutput(retryPlainText) && !isPotentialWriteRequest(messages)) {
         return json({
           intent: "answer_question",
           message: retryPlainText,
