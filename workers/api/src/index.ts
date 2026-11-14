@@ -554,6 +554,34 @@ async function prepareAction(request: Request, env: Env): Promise<Response> {
   }, 201);
 }
 
+async function cancelPendingAction(actionId: string, env: Env): Promise<Response> {
+  const cancelled = await env.DB.prepare(
+    "UPDATE pending_actions SET status = 'rejected' WHERE id = ? AND status = 'pending' AND expires_at > datetime('now') RETURNING action_type"
+  ).bind(actionId).first<{ action_type: string }>();
+
+  if (!cancelled) {
+    const existing = await env.DB.prepare(
+      "SELECT status, expires_at FROM pending_actions WHERE id = ?"
+    ).bind(actionId).first<{ status: string; expires_at: string }>();
+    if (!existing) return json({ error: "Action not found." }, 404);
+    if (existing.status === "pending" && Date.parse(existing.expires_at.replace(" ", "T") + "Z") <= Date.now()) {
+      await env.DB.prepare("UPDATE pending_actions SET status = 'rejected' WHERE id = ? AND status = 'pending'")
+        .bind(actionId).run();
+      return json({ error: "This review expired. Prepare a fresh action if you still want to proceed.", status: "expired" }, 409);
+    }
+    return json({ error: "This action is no longer awaiting approval.", status: existing.status }, 409);
+  }
+
+  try {
+    await env.DB.prepare(
+      "INSERT INTO audit_log (id, actor, action, entity_type, entity_id, details_json) VALUES (?, 'owner', 'cancel_pending_action', 'pending_action', ?, ?)"
+    ).bind(crypto.randomUUID(), actionId, JSON.stringify({ actionType: cancelled.action_type })).run();
+  } catch {
+    console.error("[actions] cancellation_audit_failed", JSON.stringify({ actionId }));
+  }
+  return json({ actionId, status: "cancelled", message: "The pending action was cancelled. No lending record was changed." });
+}
+
 async function confirmAction(actionId: string, env: Env): Promise<Response> {
   const claim = await env.DB.prepare(
     "UPDATE pending_actions SET status = 'confirming' WHERE id = ? AND status = 'pending' AND expires_at > datetime('now') RETURNING action_type, payload_json"
@@ -748,6 +776,9 @@ export default {
     if (request.method === "POST" && url.pathname === "/api/actions/prepare") {
       return prepareAction(request, env);
     }
+
+    const cancelMatch = url.pathname.match(/^\/api\/actions\/([0-9a-f-]+)\/cancel$/i);
+    if (request.method === "POST" && cancelMatch) return cancelPendingAction(cancelMatch[1], env);
 
     const confirmMatch = url.pathname.match(/^\/api\/actions\/([0-9a-f-]+)\/confirm$/i);
     if (request.method === "POST" && confirmMatch) return confirmAction(confirmMatch[1], env);
