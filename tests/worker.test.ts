@@ -287,7 +287,18 @@ describe("API worker", () => {
     expect(parseAssistantOutput(invalid)).toBeNull();
   });
 
-  beforeEach(() => {\n    loginAttempts = 0;\n    env.AI.run.mockReset();\n    env.AI.run.mockImplementation(async () => ({\n      response: JSON.stringify({\n        intent: "request_clarification",\n        message: "Magkano po ang ipapautang?",\n        proposedActions: [],\n        needsClarification: true\n      })\n    }));\n  });
+  beforeEach(() => {
+    loginAttempts = 0;
+    env.AI.run.mockReset();
+    env.AI.run.mockImplementation(async () => ({
+      response: JSON.stringify({
+        intent: "request_clarification",
+        message: "Magkano po ang ipapautang?",
+        proposedActions: [],
+        needsClarification: true
+      })
+    }));
+  });
   it("provides a public health endpoint", async () => {
     const response = await worker.fetch(new Request("https://example.test/health"), env);
     expect(response.status).toBe(200);
