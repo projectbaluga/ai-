@@ -702,12 +702,16 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   try {
     const modelResult = await runLendingAssistantModel(env.AI, systemPrompt, messages);
     let parsed = parseAssistantOutput(modelResult);
+    // Prefer a backend-verified loan proposal for an explicit loan event. This
+    // keeps a plain-text or malformed model reply from discarding clear facts
+    // already present in the conversation; the proposal still requires owner approval.
+    const verifiedLoanProposal = buildVerifiedLoanProposal(messages, recordContext);
 
     // Plain text is safe to accept only for non-transactional conversation.
     // Requests that may create or change lending records must return the
     // structured schema and continue through backend validation/confirmation.
     const firstPlainText = modelTextOutput(modelResult);
-    if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(messages)) {
+    if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(messages) && !verifiedLoanProposal) {
       return json({
         intent: "answer_question",
         message: isLendingOverviewRequest(lastUserMessage) ? removeInterestClarificationFromOverview(firstPlainText) : firstPlainText,
@@ -724,7 +728,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       diagnosticOutput = await runLendingAssistantModel(env.AI, retryPrompt, messages);
       parsed = parseAssistantOutput(diagnosticOutput);
       const retryPlainText = modelTextOutput(diagnosticOutput);
-      if (!parsed && retryPlainText && !looksLikeStructuredModelOutput(retryPlainText) && !isPotentialWriteRequest(messages)) {
+      if (!parsed && retryPlainText && !looksLikeStructuredModelOutput(retryPlainText) && !isPotentialWriteRequest(messages) && !verifiedLoanProposal) {
         return json({
           intent: "answer_question",
           message: isLendingOverviewRequest(lastUserMessage) ? removeInterestClarificationFromOverview(retryPlainText) : retryPlainText,
@@ -734,9 +738,6 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    const verifiedLoanProposal = isPotentialWriteRequest(messages)
-      ? buildVerifiedLoanProposal(messages, recordContext)
-      : null;
     const proposedLoan = parsed?.proposedActions.find(action => action.type === "create_loan");
     const explicitRepaymentFrequency = extractExplicitRepaymentFrequency(messages);
     const invalidRepaymentProposal = proposedLoan && (
@@ -754,7 +755,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
         needsClarification: true
       });
     }
-    if (verifiedLoanProposal && (!parsed || parsed.proposedActions.length === 0 && parsed.needsClarification ||
+    if (verifiedLoanProposal && (!parsed || parsed.proposedActions.length === 0 ||
       parsed.proposedActions.length > 0 && parsed.proposedActions.every(action => action.type === "create_borrower"))) {
       return json(verifiedLoanProposal);
     }
