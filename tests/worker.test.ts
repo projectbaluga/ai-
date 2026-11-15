@@ -287,7 +287,7 @@ describe("API worker", () => {
     expect(parseAssistantOutput(invalid)).toBeNull();
   });
 
-  beforeEach(() => { loginAttempts = 0; });
+  beforeEach(() => {\n    loginAttempts = 0;\n    env.AI.run.mockReset();\n    env.AI.run.mockImplementation(async () => ({\n      response: JSON.stringify({\n        intent: "request_clarification",\n        message: "Magkano po ang ipapautang?",\n        proposedActions: [],\n        needsClarification: true\n      })\n    }));\n  });
   it("provides a public health endpoint", async () => {
     const response = await worker.fetch(new Request("https://example.test/health"), env);
     expect(response.status).toBe(200);
@@ -537,7 +537,7 @@ describe("API worker", () => {
     expect(systemPrompt).toContain("TRANSACTION LIFECYCLE");
     expect(systemPrompt).toContain("REASONING DISCIPLINE");
     expect(systemPrompt).toContain("Use the required JSON object only");
-    expect(systemPrompt).toContain("2026-11-15.2");
+    expect(systemPrompt).toContain("2026-11-15.3");
     expect(systemPrompt).toContain("PHILIPPINE LENDING KNOWLEDGE BASE");
     expect(systemPrompt).toContain("SEC MC 20 SERIES OF 2026");
     expect(systemPrompt).toContain("6% per month");
