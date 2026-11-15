@@ -21,10 +21,10 @@ export async function runLendingAssistantModel(
     ],
     max_tokens: 2400,
     temperature: 0.35,
-    // Allow Gemma 4 to reason through multi-turn context and financial intent before answering.
-    // The API response remains concise; reasoning is not shown to the owner.
+    // Keep reasoning disabled while diagnosing the production invocation failure.
+    // This matches Cloudflare's Gemma 4 Workers AI getting-started example.
     chat_template_kwargs: {
-      enable_thinking: true
+      enable_thinking: false
     }
   });
 }

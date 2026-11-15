@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LENDING_ASSISTANT_MODEL, runLendingAssistantModel, type WorkersAiBinding } from "../workers/api/src/workers-ai-provider";
 
 describe("lending assistant model configuration", () => {
-  it("uses Gemma 4 with reasoning enabled and enough output budget for structured reviews", async () => {
+  it("uses Gemma 4 with reasoning disabled during invocation diagnostics", async () => {
     const run = vi.fn(async () => ({ response: "ok" }));
     const ai = { run } as unknown as WorkersAiBinding;
     const messages = [
@@ -21,7 +21,7 @@ describe("lending assistant model configuration", () => {
       ],
       max_tokens: 2400,
       temperature: 0.35,
-      chat_template_kwargs: { enable_thinking: true }
+      chat_template_kwargs: { enable_thinking: false }
     }));
   });
 });

@@ -7,6 +7,7 @@ import type {
 import { buildLendingAssistantSystemPrompt } from "./lending-assistant-prompt";
 import { buildTransactionConversationState } from "./transaction-conversation-state";
 import { runLendingAssistantModel, type WorkersAiBinding } from "./workers-ai-provider";
+import { buildAiErrorDiagnostics } from "./ai-diagnostics";
 
 export interface Env {
   DB: D1Database;
@@ -777,7 +778,15 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     }
     return json(parsed);
   } catch (error) {
-    console.error("[assistant] model_request_failed", JSON.stringify({ requestId, errorName: error instanceof Error ? error.name : "UnknownError" }));
+    console.error("[assistant] model_request_failed", JSON.stringify(buildAiErrorDiagnostics(error, {
+      requestId,
+      model: "@cf/google/gemma-4-26b-a4b-it",
+      maxTokens: 2400,
+      enableThinking: false,
+      systemPromptLength: systemPrompt.length,
+      messageCount: messages.length,
+      totalMessageCharacters
+    })));
     return json({ error: "AI assistant is temporarily unavailable. You can still use the regular app controls.", requestId }, 503);
   }
 }
