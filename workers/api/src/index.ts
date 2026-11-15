@@ -380,7 +380,7 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   const destructiveRequest = /\b(?:delete|erase|wipe|clear|burahin|tanggalin|alisin)\b/i.test(lastUser) && /\b(?:all|every|lahat|records?|record|data|borrowers?|loans?|payments?)\b/i.test(lastUser);
   if (destructiveRequest) return true;
 
-  const explicitWrite = /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang|nag[- ]?borrow|borrowed|i\s+(?:lend|lent|loaned)|umutang|nangutang|nag[- ]?loan|pinahiram)\s+(?:ako|si|ni|kay)?|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|register\s+(?!a\b|new\b)\w+|enroll\s+(?!a\b|new\b)\w+|add\s+.{1,80}\s+as\s+(?:a\s+)?borrower|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i;
+  const explicitWrite = /\b(?:paki\s*(?:lista|record|save|add|create|register|enroll|update|archive)|(?:nagpautang|magpautang|pinautang|nag[- ]?borrow|borrowed|i\s+(?:lend|lent|loaned)|umutang|nangutang|nag[- ]?loan|pinahiram)\s+(?:ako|si|ni|kay)?|(?:nagbayad|magbayad)\s+ako|(?:i[- ]?)?(?:record|save|add|create|register|enroll|update|archive)\s+(?:a\s+|ang\s+|ng\s+)?(?:new\s+)?(?:borrower|loan|payment|record)|register\s+(?!a\b|new\b)\w+|enroll\s+(?!a\b|new\b)\w+|add\s+.{1,80}\s+as\s+(?:a\s+)?borrower|itala\s+(?:ang\s+)?(?:bayad|payment)|ilista\s+(?:ang\s+)?(?:utang|loan|bayad))\b/i;
   if (explicitWrite.test(lastUser)) return true;
 
   // Carry an explicit owner approval forward only when the preceding assistant turn
@@ -393,7 +393,7 @@ function isPotentialWriteRequest(messages: AssistantMessage[]): boolean {
   // just asked for missing loan terms after the owner described a borrowing event.
   const recent = messages.slice(-8);
   const priorLoanRequest = recent.some(message => message.role === "user" &&
-    /\b(?:nangutang|umutang|nagpautang|pinahiram|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i.test(message.content));
+    /\b(?:nangutang|umutang|nagpautang|pinautang|pinahiram|borrowed|i\s+(?:lend|lent|loaned)|create\s+(?:a\s+)?loan|record\s+(?:a\s+)?loan)\b/i.test(message.content));
   const assistantAskedForTerms = /\b(?:interest|loan terms|interest type|interest value|interest period|repayment|payment schedule|paraan ng bayad|schedule ng bayad|hulog|bayaran|daily|weekly|monthly)\b/i.test(lastAssistant) &&
     /[?؟]/.test(lastAssistant);
   const suppliesInterestTerm = /\b(?:daily|weekly|monthly|one[- ]?time|fixed|percentage|araw|linggo|buwan|kada\s+(?:araw|linggo|buwan)|isang\s+(?:bayaran|hulog|beses)|single\s+payment|lump[- ]?sum|full\s+payment)\b|\d+(?:\.\d+)?\s*%/i.test(lastUser);
