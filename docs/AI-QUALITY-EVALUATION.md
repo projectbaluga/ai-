@@ -71,6 +71,14 @@ The automated test suite currently covers API validation, prompt construction, d
 
 The synthetic, machine-readable conversation pack lives at `evals/gemma4-lending-cases.json`. It contains 40 Tagalog/Taglish scenarios covering intent, context, ambiguous wording, payments, interest, dates, extensions, collection tone, disputes, privacy, permissions, write safety, calculations, and record integrity.
 
+### Automated model-only run
+
+The repository includes `evals/run-gemma4-evaluation.ts` and the GitHub Actions workflow **Gemma 4 Lending Evaluation**. The workflow sends the 40 synthetic conversation cases directly to the configured Cloudflare Workers AI model using the current prompt and knowledge-base builders. It records the model ID, prompt/knowledge versions, latency, token usage, and full responses in a downloadable workflow artifact.
+
+This is deliberately a **model-only inference run**: it does not call the production Worker route, connect to D1, load borrower records, or execute proposed actions. The workflow uses the protected `production` GitHub environment only to access its Cloudflare inference credentials; it contains no deployment or database steps. Approving that environment gate authorizes this inference job only, not a production deployment.
+
+The runner does not automatically grade model quality. Review every response against the seven scoring categories and critical-failure rule below. A completed inference run is not a passing evaluation. This model-only test also does not replace a later end-to-end test against an isolated non-production Worker with synthetic fixtures.
+
 ### How to run a model evaluation
 
 1. Use a dedicated non-production test workspace and synthetic borrower records only.
