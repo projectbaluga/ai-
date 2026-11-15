@@ -17,6 +17,8 @@ function sanitizeErrorMessage(value: string): string {
     .replace(/\b(borrower(?:\s+name)?|full[_ -]?name|phone|email)\b\s*[:=]\s*[^,;]+/gi, "$1=[redacted]")
     .replace(/\bPHP\s*[\d,]+(?:\.\d{1,2})?\b/gi, "[amount]")
     .replace(/\b[A-Z0-9+/=_-]{24,}\b/g, "[redacted]")
+    // Avoid leaking raw provider failure phrases into logs
+    .replace(/\bprovider unavailable\b/gi, "[provider error]")
     .slice(0, 200);
 }
 
