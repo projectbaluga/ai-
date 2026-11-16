@@ -980,7 +980,9 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       if (isPotentialWriteRequest(messages)) {
         return json({
           intent: "request_clarification",
-          message: "Pasensya na po, hindi ko naihanda nang maayos ang action kaya wala akong babaguhin sa records. Pakiulit ang request kasama ang pangalan o record details para ma-review ko ito nang tama.",
+          message: language === "en"
+            ? "I couldn't prepare a valid review proposal, so I won't change any records. Please retry with the borrower name and loan details so I can review the request accurately."
+            : "Pasensya na po, hindi ko naihanda nang maayos ang action kaya wala akong babaguhin sa records. Pakiulit ang request kasama ang pangalan o record details para ma-review ko ito nang tama.",
           proposedActions: [],
           needsClarification: true
         });
