@@ -6,7 +6,7 @@ import type {
 } from "../../../packages/ai-core/src/contracts";
 import { buildLendingAssistantSystemPrompt } from "./lending-assistant-prompt";
 import { buildTransactionConversationState } from "./transaction-conversation-state";
-import { runLendingAssistantModel, type WorkersAiBinding } from "./workers-ai-provider";
+import { LENDING_ASSISTANT_ENABLE_THINKING, runLendingAssistantModel, type WorkersAiBinding } from "./workers-ai-provider";
 import { buildAiErrorDiagnostics } from "./ai-diagnostics";
 
 export interface Env {
@@ -265,8 +265,12 @@ const supportedIntents: AssistantIntent[] = [
   "request_clarification", "unknown"
 ];
 
+function stripModelThinking(value: string): string {
+  return value.replace(/<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?\s*>/gi, "").replace(/<\/?think(?:ing)?\b[^>]*>/gi, "").trim();
+}
+
 function extractJsonObject(value: string): unknown | null {
-  const cleaned = value.replace(/^\uFEFF/, "").trim();
+  const cleaned = stripModelThinking(value.replace(/^\uFEFF/, "")).trim();
   const unfenced = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
   try { return JSON.parse(unfenced); } catch { /* Fall through to balanced-object extraction. */ }
 
@@ -301,6 +305,7 @@ function modelContentText(value: unknown): string | null {
   const parts = value.map(part => {
     if (typeof part === "string") return part;
     if (!isRecord(part)) return "";
+    if (typeof part.type === "string" && /reasoning|thinking/i.test(part.type)) return "";
     if (typeof part.text === "string") return part.text;
     if (typeof part.content === "string") return part.content;
     return "";
@@ -315,6 +320,7 @@ function unwrapModelContent(raw: unknown): unknown {
     else if ("output_text" in candidate) candidate = candidate.output_text;
     else if ("output" in candidate) candidate = candidate.output;
     else if ("result" in candidate && isRecord(candidate.result)) candidate = candidate.result;
+    else if ("message" in candidate && isRecord(candidate.message) && "content" in candidate.message) candidate = candidate.message.content;
     else if (Array.isArray(candidate.choices)) {
       const firstChoice = candidate.choices[0];
       if (!isRecord(firstChoice)) break;
@@ -928,7 +934,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       requestId,
       model: "@cf/google/gemma-4-26b-a4b-it",
       maxTokens: 2400,
-      enableThinking: false,
+      enableThinking: LENDING_ASSISTANT_ENABLE_THINKING,
       systemPromptLength: systemPrompt.length,
       messageCount: messages.length,
       totalMessageCharacters

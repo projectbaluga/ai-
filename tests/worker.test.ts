@@ -232,6 +232,17 @@ describe("API worker", () => {
     )).toBe("Narito ang overview ng loans. May gusto ka bang i-update?");
   });
 
+  it("strips Gemma thinking blocks and ignores separate reasoning fields before parsing JSON", () => {
+    const proposal = { intent: "prepare_action", message: "Ihahanda ko ang loan para ma-review mo.", proposedActions: [{ type: "create_loan", payload: { borrowerFullName: "Mica", principalMinor: 150000, currency: "PHP", interestType: "none", interestValue: 0, interestPeriod: "one_time", interestFrequency: "one_time", repaymentFrequency: "one_time" }, summary: "Ihanda ang loan ni Mica", requiresConfirmation: true }], needsClarification: false };
+    const raw = { choices: [{ message: { role: "assistant", reasoning: "Private reasoning", thinking: "Internal thought", content: "<think>Reasoning before final.</think>\n" + JSON.stringify(proposal) } }] };
+    expect(parseAssistantOutput(raw)).toEqual(proposal);
+  });
+
+  it("parses message.content while ignoring separate reasoning fields", () => {
+    const response = { intent: "answer_question", message: "Oo, puwedeng magtanong tungkol sa loan records.", proposedActions: [], needsClarification: false };
+    expect(parseAssistantOutput({ message: { reasoning: "Private reasoning", content: "```json\n" + JSON.stringify(response) + "\n```" } })).toEqual(response);
+  });
+
   it("combines a new borrower registration and loan into one validated approval", () => {
     const parsed = parseAssistantOutput({
       intent: "prepare_action",
@@ -854,7 +865,7 @@ describe("API worker", () => {
       proposedActions: []
     });
     expect(env.AI.run).toHaveBeenCalledOnce();
-    expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 2400, temperature: 0.35, chat_template_kwargs: { enable_thinking: true } }));
+    expect(env.AI.run).toHaveBeenCalledWith("@cf/google/gemma-4-26b-a4b-it", expect.objectContaining({ max_tokens: 2400, temperature: 0.35, chat_template_kwargs: { enable_thinking: false } }));
   });
 
   it("carries an explicit confirmation forward when the previous assistant turn named the write action", async () => {

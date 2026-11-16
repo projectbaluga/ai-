@@ -3,6 +3,7 @@ export interface WorkersAiBinding {
 }
 
 export const LENDING_ASSISTANT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
+export const LENDING_ASSISTANT_ENABLE_THINKING = false;
 
 /**
  * Server-side adapter for Cloudflare Workers AI.
@@ -22,7 +23,7 @@ export async function runLendingAssistantModel(
     max_tokens: 2400,
     temperature: 0.35,
     chat_template_kwargs: {
-      enable_thinking: true
+      enable_thinking: LENDING_ASSISTANT_ENABLE_THINKING
     }
   });
 }
