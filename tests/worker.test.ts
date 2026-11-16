@@ -253,7 +253,7 @@ describe("API worker", () => {
     try {
       const first = await worker.fetch(new Request("https://example.test/api/assistant", { method: "POST", headers: { ...authorized, "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "Pinautang ko si Mica ng 1,500 pesos, walang interest, isang bayaran." }] }) }), env);
       expect(first.status).toBe(200);
-      const firstBody = await first.json();
+      const firstBody = await first.json() as { message: string };
       expect(firstBody).toMatchObject({ intent: "prepare_action", proposedActions: [{ type: "create_loan", payload: { borrowerFullName: "Mica", principalMinor: 150000, interestType: "none" }, requiresConfirmation: true }], needsClarification: false });
       const second = await worker.fetch(new Request("https://example.test/api/assistant", { method: "POST", headers: { ...authorized, "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "Pinautang ko si Mica ng 1,500 pesos, walang interest, isang bayaran." }, { role: "assistant", content: firstBody.message }, { role: "user", content: "Ano ang ibig sabihin ng walang interest?" }] }) }), env);
       expect(second.status).toBe(200);
