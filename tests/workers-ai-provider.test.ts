@@ -24,4 +24,40 @@ describe("lending assistant model configuration", () => {
       chat_template_kwargs: { enable_thinking: false }
     }));
   });
+
+  it("retries once without chat_template_kwargs when the provider rejects that parameter", async () => {
+    const run = vi.fn()
+      .mockRejectedValueOnce(new Error("Invalid parameter chat_template_kwargs"))
+      .mockResolvedValueOnce({ response: "ok" });
+    const ai = { run } as unknown as WorkersAiBinding;
+
+    await expect(runLendingAssistantModel(ai, "system instructions", [
+      { role: "user", content: "hi" }
+    ])).resolves.toEqual({ response: "ok" });
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[0][0]).toBe(LENDING_ASSISTANT_MODEL);
+    expect(run.mock.calls[0][1]).toHaveProperty("chat_template_kwargs", { enable_thinking: false });
+    expect(run.mock.calls[1][0]).toBe(LENDING_ASSISTANT_MODEL);
+    expect(run.mock.calls[1][1]).not.toHaveProperty("chat_template_kwargs");
+    expect(run.mock.calls[1][1]).toMatchObject({
+      max_tokens: 2400,
+      temperature: 0.35,
+      messages: [
+        { role: "system", content: "system instructions" },
+        { role: "user", content: "hi" }
+      ]
+    });
+  });
+
+  it("does not retry unrelated Workers AI errors", async () => {
+    const failure = new Error("Workers AI binding unavailable");
+    const run = vi.fn().mockRejectedValue(failure);
+    const ai = { run } as unknown as WorkersAiBinding;
+
+    await expect(runLendingAssistantModel(ai, "system instructions", [
+      { role: "user", content: "hi" }
+    ])).rejects.toBe(failure);
+    expect(run).toHaveBeenCalledOnce();
+  });
 });
