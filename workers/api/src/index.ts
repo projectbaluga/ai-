@@ -926,10 +926,8 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
 
     const proposedLoan = parsed?.proposedActions.find(action => action.type === "create_loan");
     const explicitRepaymentFrequency = extractExplicitRepaymentFrequency(messages);
-    const invalidRepaymentProposal = proposedLoan && (
-      !explicitRepaymentFrequency ||
-      proposedLoan.payload.repaymentFrequency !== explicitRepaymentFrequency
-    );
+    const invalidRepaymentProposal = proposedLoan && explicitRepaymentFrequency !== null &&
+      proposedLoan.payload.repaymentFrequency !== explicitRepaymentFrequency;
     if (invalidRepaymentProposal) {
       if (verifiedLoanProposal) return json(verifiedLoanProposal);
       return json({
