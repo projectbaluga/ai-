@@ -457,14 +457,26 @@ async function sendMessage(event: SubmitEvent) {
   const messageList = document.querySelector<HTMLElement>("#chat-messages");
   const thinking = document.createElement("div");
   thinking.className = "message-bubble assistant typing-indicator";
-  thinking.textContent = "Sandali lang po—sinusuri ko ang request at verified records…";
+  const thinkingSteps = [
+    { message: "Let me connect the dots…", status: "Understanding your question…" },
+    { message: "Checking the details, one by one…", status: "Reviewing the relevant details…" },
+    { message: "Making sure the answer is clear and useful…", status: "Putting the pieces together…" },
+    { message: "Almost there—polishing your answer ✨", status: "Preparing your answer…" }
+  ];
+  let thinkingStep = 0;
+  thinking.textContent = thinkingSteps[thinkingStep].message;
   thinking.setAttribute("role", "status");
   thinking.setAttribute("aria-live", "polite");
   thinking.setAttribute("aria-label", "The assistant is preparing a response");
   messageList?.appendChild(thinking);
   if (sendButton) { sendButton.disabled = true; sendButton.textContent = "…"; }
-  if (assistantStatus) assistantStatus.textContent = "Working on your request…";
+  if (assistantStatus) assistantStatus.textContent = thinkingSteps[thinkingStep].status;
   if (messageList) messageList.scrollTop = messageList.scrollHeight;
+  const thinkingTimer = window.setInterval(() => {
+    thinkingStep = (thinkingStep + 1) % thinkingSteps.length;
+    thinking.textContent = thinkingSteps[thinkingStep].message;
+    if (assistantStatus) assistantStatus.textContent = thinkingSteps[thinkingStep].status;
+  }, 1800);
   try {
     const response = await fetch("/api/assistant", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -481,6 +493,7 @@ async function sendMessage(event: SubmitEvent) {
   } catch (error) {
     addMessage("assistant", error instanceof Error ? error.message : "Hindi muna available ang assistant. Walang na-save na transaction.");
   } finally {
+    window.clearInterval(thinkingTimer);
     thinking.remove();
     if (sendButton) { sendButton.disabled = false; sendButton.textContent = "↑"; }
     if (assistantStatus) assistantStatus.textContent = "Ready to help · English / Tagalog";
