@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import worker, { buildFinancialLookupReply, buildVerifiedLoanProposal, extractExplicitDueDate, extractExplicitRepaymentFrequency, isLendingOverviewRequest, isRecordLookupRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
+import worker, { buildFinancialLookupReply, buildVerifiedLoanProposal, extractExplicitDueDate, extractExplicitRepaymentFrequency, isLendingOverviewRequest, isRecordLookupRequest, parseAssistantOutput, parseAssistantOutputDetailed, removeInterestClarificationFromOverview } from "../workers/api/src/index";
 import { buildLendingAssistantSystemPrompt } from "../workers/api/src/lending-assistant-prompt";
 
 let loginAttempts = 0;
@@ -835,6 +835,128 @@ describe("API worker", () => {
     } finally {
       env.DB = originalDb;
     }
+  });
+
+  it("normalizes common Gemma enum and numeric near-misses and defaults confirmation to true", () => {
+    const response = parseAssistantOutput({
+      intent: "prepare_action",
+      message: "Ihahanda ko ang loan para kay Allan Lobrigo.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerFullName: "Allan Lobrigo",
+          principalMinor: "100000",
+          currency: "PHP",
+          interestType: "none",
+          interestValue: "0",
+          interestPeriod: "one-time",
+          interestFrequency: "one time",
+          repaymentFrequency: "one-time"
+        },
+        summary: "Ihanda ang loan para kay Allan Lobrigo"
+      }],
+      needsClarification: false
+    });
+    expect(response).toMatchObject({
+      intent: "prepare_action",
+      proposedActions: [{
+        type: "create_loan",
+        payload: { principalMinor: 100000, interestValue: 0, interestPeriod: "one_time", interestFrequency: "one_time", repaymentFrequency: "one_time" },
+        requiresConfirmation: true
+      }]
+    });
+  });
+
+  it("preserves Gemma's message and diagnoses only the invalid action fields", () => {
+    const parsed = parseAssistantOutputDetailed({
+      intent: "prepare_action",
+      message: "Nakuha ko ang loan details; kailangan ko lang linawin ang borrower record.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: { borrowerId: "borrower-123", borrowerFullName: "Allan Lobrigo", principalMinor: "100000", currency: "PHP", interestType: "none", interestValue: "0", interestPeriod: "one_time", interestFrequency: "one_time", repaymentFrequency: "one_time" },
+        summary: "Ihanda ang loan"
+      }],
+      needsClarification: false
+    });
+    expect(parsed.response).toMatchObject({
+      intent: "request_clarification",
+      message: "Nakuha ko ang loan details; kailangan ko lang linawin ang borrower record.",
+      proposedActions: [],
+      needsClarification: true
+    });
+    expect(parsed.issues.join(" ")).toContain("payload.borrowerId/payload.borrowerFullName");
+  });
+
+  it("keeps a model-authored clarification when Gemma returns conflicting borrower fields", async () => {
+    const originalDb = env.DB;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    env.DB = {
+      prepare: (_sql: string) => ({
+        bind: (..._values: unknown[]) => ({ all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true }) }),
+        all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    env.AI.run.mockImplementationOnce(async () => ({ response: JSON.stringify({
+      intent: "prepare_action",
+      message: "Naiintindihan ko ang loan para kay Allan. May dalawang borrower reference sa proposal kaya kailangan kong linawin kung alin ang gagamitin.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: { borrowerId: "borrower-123", borrowerFullName: "Allan Lobrigo", principalMinor: "100000", currency: "PHP", interestType: "none", interestValue: "0", interestPeriod: "one-time", interestFrequency: "one-time", repaymentFrequency: "one-time", repaymentTimingNote: "after a month" },
+        summary: "Ihanda ang loan para kay Allan"
+      }],
+      needsClarification: false
+    }) }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST", headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "I lent 1000 pesos to my friend Allan Lobrigo, no interest; he will pay the full amount after a month." }] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "request_clarification",
+        message: expect.stringContaining("two borrower reference"),
+        proposedActions: [],
+        needsClarification: true
+      });
+      expect(String(errorSpy.mock.calls[0]?.[1])).toContain("payload.borrowerId/payload.borrowerFullName");
+      expect(env.AI.run).toHaveBeenCalledOnce();
+    } finally { env.DB = originalDb; errorSpy.mockRestore(); }
+  });
+
+  it("returns Gemma's normalized create_loan action instead of the deterministic proposal", async () => {
+    const originalDb = env.DB;
+    env.DB = {
+      prepare: (_sql: string) => ({
+        bind: (..._values: unknown[]) => ({ all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true }) }),
+        all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    env.AI.run.mockImplementationOnce(async () => ({ response: JSON.stringify({
+      intent: "prepare_action",
+      message: "Ihahanda ko ang loan para kay Allan Lobrigo: ₱1,000, walang interest, at isang buong bayaran pagkatapos ng isang buwan. Pakireview muna.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: { borrowerFullName: "Allan Lobrigo", principalMinor: "100000", currency: "PHP", interestType: "none", interestValue: "0", interestPeriod: "one-time", interestFrequency: "one-time", repaymentFrequency: "one-time", repaymentTimingNote: "after a month" },
+        summary: "Ihanda ang loan para kay Allan Lobrigo"
+      }],
+      needsClarification: false
+    }) }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST", headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "I lent 1000 pesos to my friend Allan Lobrigo, no interest; he will pay the full amount after a month." }] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "prepare_action",
+        proposedActions: [{
+          type: "create_loan",
+          payload: { borrowerFullName: "Allan Lobrigo", principalMinor: 100000, interestValue: 0, interestPeriod: "one_time", interestFrequency: "one_time", repaymentFrequency: "one_time" },
+          requiresConfirmation: true
+        }]
+      });
+      expect(env.AI.run).toHaveBeenCalledOnce();
+    } finally { env.DB = originalDb; }
   });
 
   it("returns a traceable 502 for malformed model output without logging user content", async () => {
