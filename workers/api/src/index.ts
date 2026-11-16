@@ -811,13 +811,13 @@ function assistantMessageLanguageMismatch(message: string, language: SupportedLa
   return language === "en" ? detected === "tl" : detected === "en";
 }
 
-function explicitDateFromUserMessages(messages: AssistantMessage[], now = new Date()): string | null {
+function userExplicitlyStatedDate(messages: AssistantMessage[], expectedDate: string, now = new Date()): boolean {
   for (const message of messages) {
     if (message.role !== "user") continue;
     const date = extractExplicitDueDate(message.content, now);
-    if (date) return date;
+    if (date === expectedDate) return true;
   }
-  return null;
+  return false;
 }
 
 function relativeRepaymentTimingFromUserMessages(messages: AssistantMessage[]): string | null {
@@ -1004,29 +1004,35 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     }
 
     if (parsed && assistantMessageLanguageMismatch(parsed.message, language)) {
+      const originalParsed = parsed;
       retryAttempted = true;
       modelAttemptCount += 1;
       const languageRetry = await runLendingAssistantModel(env.AI,
         systemPrompt + "\\n\\nLANGUAGE RETRY: Your previous reply used the wrong language. The user's latest message is in " + language + ". Rewrite the response entirely in " + (language === "en" ? "English" : "Filipino/Tagalog") + ". Keep the same intent, action types and payload values; do not alter financial facts. Return exactly one valid JSON object using the required schema.",
         messages);
       const retryParsed = parseAssistantOutput(languageRetry);
-      if (retryParsed && !assistantMessageLanguageMismatch(retryParsed.message, language)) parsed = retryParsed;
+      const sameProposedPayloads = retryParsed &&
+        retryParsed.intent === originalParsed.intent &&
+        retryParsed.proposedActions.length === originalParsed.proposedActions.length &&
+        retryParsed.proposedActions.every((action, i) =>
+          action.type === originalParsed.proposedActions[i].type &&
+          JSON.stringify(action.payload) === JSON.stringify(originalParsed.proposedActions[i].payload));
+      if (retryParsed && !assistantMessageLanguageMismatch(retryParsed.message, language) && sameProposedPayloads) parsed = retryParsed;
       else parsed.message = language === "en"
         ? "I prepared the requested response, but could not phrase it reliably in English. Please retry before proceeding."
         : "Na ihanda ko ang tugon, pero hindi ko ito maipahayag nang maaasahan sa Tagalog. Pakisubukan muli bago magpatuloy.";
     }
 
-    const userExplicitDate = explicitDateFromUserMessages(messages);
     const relativeTiming = relativeRepaymentTimingFromUserMessages(messages);
     if (parsed) {
       for (const action of parsed.proposedActions) {
         if (action.type === "create_loan" && text(action.payload.dueDate, 10) &&
-            (!userExplicitDate || action.payload.dueDate !== userExplicitDate)) {
+            !userExplicitlyStatedDate(messages, action.payload.dueDate)) {
           delete action.payload.dueDate;
           if (relativeTiming) action.payload.repaymentTimingNote = relativeTiming;
         }
         if (action.type === "record_payment" && text(action.payload.paidAt, 10) &&
-            (!userExplicitDate || action.payload.paidAt !== userExplicitDate)) {
+            !userExplicitlyStatedDate(messages, action.payload.paidAt)) {
           delete action.payload.paidAt;
         }
       }
