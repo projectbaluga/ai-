@@ -725,7 +725,7 @@ async function sendMessage(event: SubmitEvent) {
   try {
     const response = await fetch("/api/assistant", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: state.messages.slice(-20), language: "tl-en" })
+      body: JSON.stringify({ messages: state.messages.slice(-20) })
     });
     const data = await response.json() as AssistantReply & { error?: string };
     if (!response.ok) throw new Error(data.error ?? "Assistant request failed.");

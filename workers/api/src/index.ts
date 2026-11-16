@@ -662,6 +662,46 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
   };
 }
 
+export function detectAssistantLanguage(message: string): SupportedLanguage {
+  const normalized = message.toLocaleLowerCase().normalize("NFD")
+    .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9' -]+/g, " ")
+    .replace(/\\s+/g, " ").trim();
+  const words = normalized.split(" ").filter(Boolean);
+  const filipinoMarkers = new Set([
+    "ako", "ikaw", "siya", "kami", "tayo", "kayo", "sila", "ko", "mo", "namin", "natin",
+    "nila", "niya", "atin", "akin", "iyo", "ito", "iyan", "iyon", "dito", "doon",
+    "ano", "sino", "saan", "kailan", "bakit", "paano", "magkano", "alin",
+    "oo", "hindi", "wala", "meron", "mayroon", "gusto", "kailangan", "pwede", "puwede",
+    "paki", "pakisuyo", "ayos", "gawin", "sabihin", "ipaliwanag", "tulong",
+    "utang", "pautang", "nagpautang", "nangutang", "bayad", "bayaran", "hulog",
+    "salamat", "sige", "naman", "kasi", "pero", "lang", "yung", "iyon", "talaga",
+    "daw", "raw", "muna", "pa", "na", "ng", "nang", "sa", "ang", "mga", "at",
+    "po", "opo", "ba", "eh", "pala", "din", "rin", "kaya", "kapag", "kung"
+  ]);
+  const strongMarkers = new Set([
+    "ako", "ikaw", "siya", "kami", "tayo", "kayo", "sila", "ko", "mo", "namin", "natin",
+    "ano", "sino", "saan", "kailan", "bakit", "paano", "magkano", "hindi", "wala",
+    "gusto", "kailangan", "pwede", "puwede", "paki", "pakisuyo", "ayos", "gawin",
+    "utang", "pautang", "nagpautang", "nangutang", "bayad", "bayaran", "hulog",
+    "salamat", "sige", "naman", "kasi", "yung", "muna", "opo", "pakisuyo"
+  ]);
+  const filipinoCount = words.filter(word => filipinoMarkers.has(word)).length;
+  const strongCount = words.filter(word => strongMarkers.has(word)).length;
+  if (strongCount === 0 && filipinoCount === 0) return "en";
+  const englishMarkers = new Set([
+    "the", "and", "please", "can", "could", "would", "should", "what", "when", "where",
+    "why", "how", "show", "tell", "explain", "help", "my", "your", "is", "are", "was",
+    "were", "do", "does", "did", "i", "you", "we", "they", "it", "this", "that",
+    "loan", "loans", "payment", "payments", "borrower", "borrowers", "balance", "record",
+    "records", "interest", "amount", "make", "update", "find", "list"
+  ]);
+  const englishCount = words.filter(word => englishMarkers.has(word)).length;
+  if (strongCount >= 2 && englishCount >= 2) return "tl-en";
+  if (strongCount >= 1 && englishCount >= 1) return "tl-en";
+  if (filipinoCount >= 2 || strongCount >= 1) return "tl";
+  return "en";
+}
+
 async function assistantReply(request: Request, env: Env): Promise<Response> {
   if (!env.AI) return json({ error: "AI service is not configured." }, 503);
   const body = await readJson(request);
@@ -685,9 +725,14 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     return json({ error: "The last conversation message must be from the user." }, 400);
   }
 
-  const language: SupportedLanguage =
-    body.language === "en" || body.language === "tl" || body.language === "tl-en" ? body.language : "tl-en";
   const lastUserMessage = messages[messages.length - 1].content;
+  // Treat "tl-en" as automatic language selection for older clients; explicit
+  // English or Tagalog preferences remain supported, while the current UI
+  // lets the backend follow the latest user message.
+  const language: SupportedLanguage =
+    body.language === "en" || body.language === "tl"
+      ? body.language
+      : detectAssistantLanguage(lastUserMessage);
   const transactionState = buildTransactionConversationState(messages);
   if (transactionState.cancelled) {
     return json({
