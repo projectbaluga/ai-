@@ -173,7 +173,7 @@ function validateActionDetailed(type: unknown, input: unknown): ActionValidation
     if (!text(payload.paidAt, 40) || Number.isNaN(Date.parse(String(payload.paidAt)))) issues.push("payload.paidAt: expected a valid date/time string");
     optionalString("notes");
   }
-  return issues.length ? { action: null, issues } : { action: { type, payload }, issues: [] };
+  return issues.length ? { action: null, issues } : { action: { type: normalized.type, payload }, issues: [] };
 }
 function validateAction(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
   return validateActionDetailed(type, input).action;
