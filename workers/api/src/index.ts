@@ -105,72 +105,78 @@ function normalizeActionPayload(type: unknown, input: unknown): { type: ActionTy
   return { type: canonicalType, payload };
 }
 
-function validateAction(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
+type ActionValidationResult = { action: { type: ActionType; payload: JsonObject } | null; issues: string[] };
+function normalizeNumericField(payload: JsonObject, key: string): void {
+  const value = payload[key];
+  if (typeof value === "string" && value.trim() !== "") {
+    const numeric = Number(value.trim().replace(/,/g, ""));
+    if (Number.isFinite(numeric)) payload[key] = numeric;
+  }
+}
+function normalizeEnumField(payload: JsonObject, key: string, allowed: string[]): void {
+  const value = payload[key];
+  if (typeof value !== "string") return;
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const aliases: Record<string, string> = { bi_weekly: "biweekly", every_two_weeks: "biweekly", no_interest: "none", fixed_amount: "fixed", percentage_based: "percentage" };
+  const canonical = aliases[normalized] ?? normalized;
+  if (allowed.includes(canonical)) payload[key] = canonical;
+}
+function validateActionDetailed(type: unknown, input: unknown): ActionValidationResult {
   const normalized = normalizeActionPayload(type, input);
-  if (!normalized) return null;
+  if (!normalized) return { action: null, issues: ["type: unsupported action type or payload is not an object"] };
   type = normalized.type;
-  const payload = normalized.payload;
-
+  const payload = { ...normalized.payload };
+  const issues: string[] = [];
+  const requireText = (key: string, max: number) => { if (!text(payload[key], max)) issues.push("payload." + key + ": expected non-empty text (max " + max + ")"); };
+  const optionalText = (key: string, max: number) => { if (payload[key] !== undefined && payload[key] !== null && !text(payload[key], max)) issues.push("payload." + key + ": expected text (max " + max + ") or null"); };
+  const optionalString = (key: string) => { if (payload[key] !== undefined && payload[key] !== null && typeof payload[key] !== "string") issues.push("payload." + key + ": expected a string or null"); };
+  const requireEnum = (key: string, allowed: string[]) => { if (!allowed.includes(String(payload[key]))) issues.push("payload." + key + ": invalid value; expected one of " + allowed.join(", ")); };
+  const requireNonNegativeNumber = (key: string) => { const value = payload[key]; if (typeof value !== "number" || !Number.isFinite(value) || value < 0) issues.push("payload." + key + ": expected a non-negative finite number"); };
+  const optionalPositiveInteger = (key: string) => { const value = payload[key]; if (value !== undefined && value !== null && (!Number.isSafeInteger(value) || (value as number) <= 0)) issues.push("payload." + key + ": expected a positive safe integer or null"); };
   if (type === "clear_all_records") {
-    return Object.keys(payload).length === 0 ? { type, payload } : null;
+    if (Object.keys(payload).length !== 0) issues.push("payload: clear_all_records requires an empty object");
+  } else if (type === "create_borrower") {
+    requireText("fullName", 160); optionalText("phone", 40); optionalString("notes");
+  } else if (type === "create_loan") {
+    const hasBorrowerId = text(payload.borrowerId, 80), hasBorrowerName = text(payload.borrowerFullName, 160);
+    if (hasBorrowerId === hasBorrowerName) issues.push("payload.borrowerId/payload.borrowerFullName: provide exactly one (verified borrowerId OR borrowerFullName, never both or neither)");
+    if (hasBorrowerId && ["PENDING_BORROWER_ID", "pending_borrower_id"].includes(String(payload.borrowerId))) issues.push("payload.borrowerId: placeholder IDs are not allowed");
+    optionalText("phone", 40);
+    for (const key of ["principalMinor", "interestValue", "installmentCount", "installmentAmountMinor"]) normalizeNumericField(payload, key);
+    normalizeEnumField(payload, "interestType", ["none", "fixed", "percentage"]);
+    normalizeEnumField(payload, "interestPeriod", ["one_time", "monthly"]);
+    normalizeEnumField(payload, "interestFrequency", ["one_time", "daily", "weekly", "monthly", "annual"]);
+    normalizeEnumField(payload, "repaymentFrequency", ["one_time", "daily", "weekly", "biweekly", "monthly"]);
+    if (!Number.isSafeInteger(payload.principalMinor) || (payload.principalMinor as number) <= 0) issues.push("payload.principalMinor: expected a positive safe integer in minor currency units");
+    if (payload.currency !== undefined && payload.currency !== "PHP") issues.push("payload.currency: only PHP is supported");
+    requireEnum("interestType", ["none", "fixed", "percentage"]); requireNonNegativeNumber("interestValue");
+    requireEnum("interestPeriod", ["one_time", "monthly"]); requireEnum("interestFrequency", ["one_time", "daily", "weekly", "monthly", "annual"]);
+    if (payload.interestType === "none" && payload.interestValue !== 0) issues.push("payload.interestValue: must be 0 when interestType is none");
+    if (payload.dueDate !== undefined && payload.dueDate !== null && !isIsoDate(payload.dueDate)) issues.push("payload.dueDate: expected a real calendar date in YYYY-MM-DD format");
+    if (payload.repaymentFrequency !== undefined) requireEnum("repaymentFrequency", ["one_time", "daily", "weekly", "biweekly", "monthly"]);
+    optionalText("repaymentTimingNote", 240); optionalPositiveInteger("installmentCount"); optionalPositiveInteger("installmentAmountMinor"); optionalString("notes");
+  } else if (type === "update_borrower") {
+    requireText("borrowerId", 80); requireText("fullName", 160); optionalText("phone", 40); optionalString("notes");
+  } else if (type === "archive_borrower") {
+    requireText("borrowerId", 80);
+  } else if (type === "update_loan_terms") {
+    requireText("loanId", 80); normalizeNumericField(payload, "interestValue");
+    normalizeEnumField(payload, "interestType", ["none", "fixed", "percentage"]);
+    normalizeEnumField(payload, "interestPeriod", ["one_time", "monthly"]);
+    normalizeEnumField(payload, "interestFrequency", ["one_time", "daily", "weekly", "monthly", "annual"]);
+    requireEnum("interestType", ["none", "fixed", "percentage"]); requireNonNegativeNumber("interestValue");
+    requireEnum("interestPeriod", ["one_time", "monthly"]); requireEnum("interestFrequency", ["one_time", "daily", "weekly", "monthly", "annual"]);
+    if (payload.interestType === "none" && payload.interestValue !== 0) issues.push("payload.interestValue: must be 0 when interestType is none");
+  } else if (type === "record_payment") {
+    requireText("loanId", 80); normalizeNumericField(payload, "amountMinor");
+    if (!Number.isSafeInteger(payload.amountMinor) || (payload.amountMinor as number) <= 0) issues.push("payload.amountMinor: expected a positive safe integer in minor currency units");
+    if (!text(payload.paidAt, 40) || Number.isNaN(Date.parse(String(payload.paidAt)))) issues.push("payload.paidAt: expected a valid date/time string");
+    optionalString("notes");
   }
-  if (type === "create_borrower") {
-    if (!text(payload.fullName, 160)) return null;
-    if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
-    if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
-    return { type, payload };
-  }
-  if (type === "create_loan") {
-    const hasBorrowerId = text(payload.borrowerId, 80);
-    const hasBorrowerName = text(payload.borrowerFullName, 160);
-    if (hasBorrowerId === hasBorrowerName) return null;
-    if (hasBorrowerId && ["PENDING_BORROWER_ID", "pending_borrower_id"].includes(String(payload.borrowerId))) return null;
-    if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
-    if (!Number.isSafeInteger(payload.principalMinor) || (payload.principalMinor as number) <= 0) return null;
-    if (payload.currency !== undefined && payload.currency !== "PHP") return null;
-    if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
-    if (typeof payload.interestValue !== "number" || !Number.isFinite(payload.interestValue) || payload.interestValue < 0) return null;
-    if (!["one_time", "monthly"].includes(String(payload.interestPeriod))) return null;
-    if (!["one_time", "daily", "weekly", "monthly", "annual"].includes(String(payload.interestFrequency))) return null;
-    if (payload.interestType === "none" && payload.interestValue !== 0) return null;
-    if (payload.dueDate !== undefined && payload.dueDate !== null &&
-        !isIsoDate(payload.dueDate)) return null;
-    if (payload.repaymentFrequency !== undefined && !["one_time", "daily", "weekly", "biweekly", "monthly"].includes(String(payload.repaymentFrequency))) return null;
-    if (payload.repaymentTimingNote !== undefined && payload.repaymentTimingNote !== null && !text(payload.repaymentTimingNote, 240)) return null;
-    if (payload.installmentCount !== undefined && payload.installmentCount !== null &&
-        (!Number.isSafeInteger(payload.installmentCount) || (payload.installmentCount as number) <= 0)) return null;
-    if (payload.installmentAmountMinor !== undefined && payload.installmentAmountMinor !== null &&
-        (!Number.isSafeInteger(payload.installmentAmountMinor) || (payload.installmentAmountMinor as number) <= 0)) return null;
-    if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
-    return { type, payload };
-  }
-  if (type === "update_borrower") {
-    if (!text(payload.borrowerId, 80) || !text(payload.fullName, 160)) return null;
-    if (payload.phone !== undefined && payload.phone !== null && !text(payload.phone, 40)) return null;
-    if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
-    return { type, payload };
-  }
-  if (type === "archive_borrower") {
-    if (!text(payload.borrowerId, 80)) return null;
-    return { type, payload };
-  }
-  if (type === "update_loan_terms") {
-    if (!text(payload.loanId, 80)) return null;
-    if (!["none", "fixed", "percentage"].includes(String(payload.interestType))) return null;
-    if (typeof payload.interestValue !== "number" || !Number.isFinite(payload.interestValue) || payload.interestValue < 0) return null;
-    if (!["one_time", "monthly"].includes(String(payload.interestPeriod))) return null;
-    if (!["one_time", "daily", "weekly", "monthly", "annual"].includes(String(payload.interestFrequency))) return null;
-    if (payload.interestType === "none" && payload.interestValue !== 0) return null;
-    return { type, payload };
-  }
-  if (type === "record_payment") {
-    if (!text(payload.loanId, 80)) return null;
-    if (!Number.isSafeInteger(payload.amountMinor) || (payload.amountMinor as number) <= 0) return null;
-    if (!text(payload.paidAt, 40) || Number.isNaN(Date.parse(payload.paidAt))) return null;
-    if (payload.notes !== undefined && payload.notes !== null && typeof payload.notes !== "string") return null;
-    return { type, payload };
-  }
-  return null;
+  return issues.length ? { action: null, issues } : { action: { type, payload }, issues: [] };
+}
+function validateAction(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
+  return validateActionDetailed(type, input).action;
 }
 
 const SESSION_COOKIE = "lending_session";
@@ -346,35 +352,57 @@ function unwrapModelOutput(raw: unknown): unknown {
   return content !== null ? extractJsonObject(content) : candidate;
 }
 
-export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
+export interface AssistantParseResult { response: AssistantResponse | null; issues: string[]; }
+export function parseAssistantOutputDetailed(raw: unknown): AssistantParseResult {
   const candidate = unwrapModelOutput(raw);
-  if (!isRecord(candidate) || !supportedIntents.includes(candidate.intent as AssistantIntent) ||
-      !text(candidate.message, 4000) || !Array.isArray(candidate.proposedActions) ||
-      typeof candidate.needsClarification !== "boolean") return null;
+  if (!isRecord(candidate)) return { response: null, issues: ["response: expected a JSON object"] };
+  const issues: string[] = [];
+  if (!supportedIntents.includes(candidate.intent as AssistantIntent)) issues.push("intent: unsupported or missing intent");
+  if (!text(candidate.message, 4000)) issues.push("message: expected non-empty text (max 4000)");
+  if (typeof candidate.needsClarification !== "boolean") issues.push("needsClarification: expected boolean");
+  if (issues.length) return { response: null, issues };
+  if (!Array.isArray(candidate.proposedActions)) return {
+    response: { intent: "request_clarification", message: candidate.message as string, proposedActions: [], needsClarification: true },
+    issues: ["proposedActions: expected an array"]
+  };
   let rawActions = candidate.proposedActions as unknown[];
   const borrowerAction = rawActions.find(item => isRecord(item) && ["create_borrower", "createBorrower", "register_borrower", "registerBorrower"].includes(String(item.type)));
   const loanAction = rawActions.find(item => isRecord(item) && ["create_loan", "createLoan"].includes(String(item.type)));
-  if (borrowerAction && loanAction && isRecord(borrowerAction) && isRecord(loanAction) &&
-      isRecord(borrowerAction.payload) && isRecord(loanAction.payload) &&
-      ["PENDING_BORROWER_ID", "pending_borrower_id"].includes(String(loanAction.payload.borrowerId))) {
+  if (borrowerAction && loanAction && isRecord(borrowerAction) && isRecord(loanAction) && isRecord(borrowerAction.payload) && isRecord(loanAction.payload) && ["PENDING_BORROWER_ID", "pending_borrower_id"].includes(String(loanAction.payload.borrowerId))) {
     const fullName = borrowerAction.payload.fullName ?? borrowerAction.payload.name;
-    if (!text(fullName, 160)) return null;
-    const combinedPayload: JsonObject = { ...loanAction.payload, borrowerFullName: fullName };
-    if (text(borrowerAction.payload.phone, 40)) combinedPayload.phone = borrowerAction.payload.phone;
-    delete combinedPayload.borrowerId;
-    rawActions = rawActions.filter(item => item !== borrowerAction);
-    rawActions = rawActions.map(item => item === loanAction ? { ...loanAction, payload: combinedPayload } : item);
+    if (!text(fullName, 160)) issues.push("proposedActions: borrower registration must include payload.fullName when combined with create_loan");
+    else {
+      const combinedPayload: JsonObject = { ...loanAction.payload, borrowerFullName: fullName };
+      if (text(borrowerAction.payload.phone, 40)) combinedPayload.phone = borrowerAction.payload.phone;
+      delete combinedPayload.borrowerId;
+      rawActions = rawActions.filter(item => item !== borrowerAction);
+      rawActions = rawActions.map(item => item === loanAction ? { ...loanAction, payload: combinedPayload } : item);
+    }
   }
   const proposedActions = [];
-  for (const item of rawActions) {
-    if (!isRecord(item) || !text(item.type, 80) || !isRecord(item.payload) ||
-        !text(item.summary, 1000) || item.requiresConfirmation !== true) return null;
-    const validated = validateAction(item.type, item.payload);
-    if (!validated) return null;
-    proposedActions.push({ type: validated.type, payload: validated.payload, summary: item.summary, requiresConfirmation: true as const });
+  for (let index = 0; index < rawActions.length; index++) {
+    const item = rawActions[index], prefix = "proposedActions[" + index + "]";
+    if (!isRecord(item)) { issues.push(prefix + ": expected an action object"); continue; }
+    if (!text(item.type, 80)) { issues.push(prefix + ".type: expected a supported action name"); continue; }
+    if (!isRecord(item.payload)) { issues.push(prefix + ".payload: expected an object"); continue; }
+    if (!text(item.summary, 1000)) { issues.push(prefix + ".summary: expected non-empty text (max 1000)"); continue; }
+    if (item.requiresConfirmation !== undefined && item.requiresConfirmation !== true) { issues.push(prefix + ".requiresConfirmation: must be true for every proposed action"); continue; }
+    const validated = validateActionDetailed(item.type, item.payload);
+    if (!validated.action) { issues.push(...validated.issues.map(issue => prefix + "." + issue)); continue; }
+    proposedActions.push({ type: validated.action.type, payload: validated.action.payload, summary: item.summary, requiresConfirmation: true as const });
   }
-  if (proposedActions.length > 3) return null;
-  return { intent: candidate.intent as AssistantIntent, message: candidate.message, proposedActions, needsClarification: candidate.needsClarification };
+  if (rawActions.length > 3) issues.push("proposedActions: maximum of 3 actions is allowed");
+  if (issues.length) return {
+    response: { intent: "request_clarification", message: candidate.message as string, proposedActions: [], needsClarification: true },
+    issues
+  };
+  return {
+    response: { intent: candidate.intent as AssistantIntent, message: candidate.message as string, proposedActions, needsClarification: candidate.needsClarification as boolean },
+    issues: []
+  };
+}
+export function parseAssistantOutput(raw: unknown): AssistantResponse | null {
+  return parseAssistantOutputDetailed(raw).response;
 }
 
 function modelOutputDiagnostics(raw: unknown): JsonObject {
