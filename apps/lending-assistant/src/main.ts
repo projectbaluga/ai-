@@ -298,13 +298,19 @@ function renderProposal(proposal: AssistantProposal) {
   const details = document.createElement("pre");
   const editor = document.createElement("div");
   editor.className = "proposal-editor";
+  const editorControls: Array<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement> = [];
+  const validateEditor = () => editorControls.every(control => control.checkValidity());
   const addField = (labelText: string, type: string, value: string, onValue: (value: string) => void, options?: Array<{value:string;label:string}>) => {
     const label=document.createElement("label"); label.className="proposal-field";
     const caption=document.createElement("span"); caption.textContent=labelText; label.appendChild(caption);
     const control=type==="select"?document.createElement("select"):document.createElement("input");
     if(control instanceof HTMLInputElement)control.type=type;
     if(control instanceof HTMLSelectElement)(options??[]).forEach(option=>{const item=document.createElement("option");item.value=option.value;item.textContent=option.label;control.appendChild(item);});
-    control.value=value; control.addEventListener("input",()=>onValue(control.value)); control.addEventListener("change",()=>onValue(control.value));
+    control.value=value;
+    if (["Borrower name","Full name","Principal (PHP)"].includes(labelText)) control.required=true;
+    if (control instanceof HTMLInputElement && type==="number") control.min=labelText==="Principal (PHP)"?"0.01":"0";
+    editorControls.push(control);
+    control.addEventListener("input",()=>onValue(control.value)); control.addEventListener("change",()=>onValue(control.value));
     label.appendChild(control); editor.appendChild(label); return control;
   };
   const updatePreview=()=>{
@@ -338,7 +344,8 @@ function renderProposal(proposal: AssistantProposal) {
     details.textContent="Review and edit the borrower details below before preparing confirmation.";
   } else {
     const raw=document.createElement("textarea"); raw.className="proposal-json-editor"; raw.value=JSON.stringify(editablePayload,null,2); raw.setAttribute("aria-label","Edit proposed action payload JSON");
-    raw.addEventListener("change",()=>{try{const parsed=JSON.parse(raw.value);if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)){Object.keys(editablePayload).forEach(key=>delete editablePayload[key]);Object.assign(editablePayload,parsed);}raw.setCustomValidity("");}catch{raw.setCustomValidity("Enter valid JSON before preparing.");}});
+    editorControls.push(raw);
+    raw.addEventListener("input",()=>{try{const parsed=JSON.parse(raw.value);if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)){Object.keys(editablePayload).forEach(key=>delete editablePayload[key]);Object.assign(editablePayload,parsed);}raw.setCustomValidity("");}catch{raw.setCustomValidity("Enter valid JSON before preparing.");}});
     editor.appendChild(raw); details.textContent="Edit the action payload below. The server validates it before preparing confirmation.";
   }
   const prepare = document.createElement("button");
@@ -346,6 +353,7 @@ function renderProposal(proposal: AssistantProposal) {
   prepare.textContent = "Ihanda ang kumpirmasyon";
   prepare.addEventListener("click", async () => {
     if (state.actionBusy || state.busy) return;
+    if (!validateEditor()) { editorControls.find(control => !control.checkValidity())?.reportValidity(); return; }
     state.actionBusy = true;
     prepare.disabled = true;
     prepare.textContent = "Preparing…";

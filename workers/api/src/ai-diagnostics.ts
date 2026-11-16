@@ -6,6 +6,8 @@ type DiagnosticContext = {
   systemPromptLength: number;
   messageCount: number;
   totalMessageCharacters: number;
+  latencyMs?: number;
+  retryCount?: number;
 };
 
 function sanitizeErrorMessage(value: string): string {
