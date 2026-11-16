@@ -1208,3 +1208,44 @@ describe("API worker", () => {
   });
 
 });
+
+
+describe("assistant golden endpoint regressions", () => {
+  const goldenDb = {
+    prepare: (_sql: string) => ({
+      bind: (..._values: unknown[]) => ({ all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true }) }),
+      all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true })
+    })
+  } as unknown as D1Database;
+  const loan = (name: string, principalMinor: number, dueDate?: string) => ({
+    intent: "prepare_action", message: "I prepared the loan details for review.",
+    proposedActions: [{ type: "create_loan", payload: {
+      borrowerFullName: name, principalMinor, currency: "PHP", interestType: "none",
+      interestValue: 0, interestPeriod: "one_time", interestFrequency: "one_time",
+      repaymentFrequency: "one_time", ...(dueDate ? { dueDate } : {})
+    }, summary: "Review loan for " + name, requiresConfirmation: true }],
+    needsClarification: false
+  });
+  const cases = [
+    { name: "Tagalog complete loan creation", messages: [{role:"user" as const,content:"Nagpautang ako kay Juan Dela Cruz ng ₱1,000, walang interest, babayaran sa December 16, 2026."}], output:loan("Juan Dela Cruz",100000,"2026-12-16"), intent:"prepare_action", action:"create_loan" },
+    { name: "English complete loan creation", messages: [{role:"user" as const,content:"I lent PHP 2,000 to my friend Maria Santos, no interest, one-time payment due December 20, 2026."}], output:loan("Maria Santos",200000,"2026-12-20"), intent:"prepare_action", action:"create_loan" },
+    { name: "Taglish loan missing exact due date", messages: [{role:"user" as const,content:"Please create a loan for Alex Reyes, ₱1,500, no interest, monthly installments."}], output:{intent:"request_clarification",message:"What exact due date should I record?",proposedActions:[],needsClarification:true}, intent:"request_clarification", action:undefined },
+    { name: "Payment recording", messages: [{role:"user" as const,content:"Please record payment of ₱500 for loan ID loan-123 paid on 2026-11-16."}], output:{intent:"prepare_action",message:"Review this payment.",proposedActions:[{type:"record_payment",payload:{loanId:"loan-123",amountMinor:50000,paidAt:"2026-11-16"},summary:"Record payment",requiresConfirmation:true}],needsClarification:false}, intent:"prepare_action", action:"record_payment" },
+    { name: "Record lookup", messages: [{role:"user" as const,content:"Find the loan record for Maria Santos."}], output:{intent:"search_records",message:"I can look for Maria Santos's loan record.",proposedActions:[],needsClarification:false}, intent:"search_records", action:undefined },
+    { name: "Greeting", messages: [{role:"user" as const,content:"Hello po! Kumusta?"}], output:{intent:"answer_question",message:"Hello po! How can I help?",proposedActions:[],needsClarification:false}, intent:"answer_question", action:undefined },
+    { name: "Clarification follow-up with exact date", messages:[{role:"user" as const,content:"I lent PHP 1,000 to my friend Alex Cruz, no interest, one-time payment."},{role:"assistant" as const,content:"What exact due date should I record?"},{role:"user" as const,content:"Dec 16, 2026"}], output:loan("Alex Cruz",100000,"2026-12-16"), intent:"prepare_action", action:"create_loan" }
+  ];
+  it.each(cases)("$name", async ({messages,output,intent,action}) => {
+    const originalDb=env.DB; env.DB=goldenDb; env.AI.run.mockReset(); env.AI.run.mockResolvedValue({response:JSON.stringify(output)});
+    const invalidLog=vi.spyOn(console,"error").mockImplementation(()=>undefined);
+    try {
+      const response=await worker.fetch(new Request("https://example.test/api/assistant",{method:"POST",headers:{...authorized,"content-type":"application/json"},body:JSON.stringify({messages})}),env);
+      expect(response.status).toBe(200);
+      const body=await response.json() as {intent:string;proposedActions?:Array<{type:string}>};
+      expect(body.intent).toBe(intent);
+      if(action)expect(body.proposedActions?.map(item=>item.type)).toContain(action);
+      else expect(body.proposedActions??[]).toHaveLength(0);
+      expect(invalidLog.mock.calls.some(call=>String(call[0]).includes("invalid_model_response"))).toBe(false);
+    } finally { invalidLog.mockRestore(); env.DB=originalDb; }
+  });
+});

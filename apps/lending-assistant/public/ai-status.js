@@ -5,13 +5,17 @@
     unchecked: "AI · Not checked",
     thinking: "AI · Thinking",
     online: "AI · Online",
-    unavailable: "AI · Unavailable"
+    formatError: "AI · Format error",
+    serviceUnavailable: "AI · Service unavailable",
+    cannotReach: "AI · Cannot reach service"
   };
   const descriptions = {
     unchecked: "AI service not checked yet · English / Tagalog",
     thinking: "Processing your message…",
     online: "AI service responded successfully · English / Tagalog",
-    unavailable: "AI service request failed · try again later"
+    formatError: "The service responded, but the assistant could not format a valid reply · try again",
+    serviceUnavailable: "The AI service is temporarily unavailable · try again later",
+    cannotReach: "Cannot reach the AI service · check your connection"
   };
 
   const style = document.createElement("style");
@@ -22,7 +26,7 @@
     .ai-service-indicator.thinking{color:#9a6a1e;background:#fff6e5;border-color:#f5e6c5}
     .ai-service-indicator.thinking:before{animation:ai-status-pulse 1s ease-in-out infinite}
     .ai-service-indicator.online{color:#23845d;background:#eaf8f1;border-color:#d6f0e3}
-    .ai-service-indicator.unavailable{color:#b24e59;background:#fff0f1;border-color:#f5dadd}
+    .ai-service-indicator.formatError,.ai-service-indicator.serviceUnavailable,.ai-service-indicator.cannotReach{color:#b24e59;background:#fff0f1;border-color:#f5dadd}
     @keyframes ai-status-pulse{50%{opacity:.25;transform:scale(.75)}}
     @media(max-width:700px){.ai-service-indicator{font-size:8px;padding:6px 7px;gap:4px}}
   `;
@@ -69,11 +73,13 @@
       const response = await originalFetch(input, init);
       if (isAiRequest) {
         if (response.ok) setStatus("online", "The latest assistant request returned a successful response.");
-        else setStatus("unavailable", "The latest assistant request returned HTTP " + response.status + ".");
+        else if (response.status === 502) setStatus("formatError", "The assistant returned an invalid response format (HTTP 502).");
+        else if (response.status === 503) setStatus("serviceUnavailable", "The AI service is unavailable (HTTP 503).");
+        else setStatus("serviceUnavailable", "The assistant request failed with HTTP " + response.status + ".");
       }
       return response;
     } catch (error) {
-      if (isAiRequest) setStatus("unavailable", error instanceof Error ? error.message : "The assistant request could not reach the service.");
+      if (isAiRequest) setStatus("cannotReach", error instanceof Error ? error.message : "The assistant request could not reach the service.");
       throw error;
     }
   };

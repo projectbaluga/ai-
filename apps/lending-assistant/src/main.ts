@@ -294,27 +294,52 @@ function renderProposal(proposal: AssistantProposal) {
   summary.textContent = proposal.type === "create_loan"
     ? "Suriin ang buod ng napagkasunduang detalye. Walang mase-save hangga't hindi ninyo kinukumpirma."
     : proposal.summary;
+  const editablePayload: Record<string, unknown> = { ...proposal.payload };
   const details = document.createElement("pre");
+  const editor = document.createElement("div");
+  editor.className = "proposal-editor";
+  const addField = (labelText: string, type: string, value: string, onValue: (value: string) => void, options?: Array<{value:string;label:string}>) => {
+    const label=document.createElement("label"); label.className="proposal-field";
+    const caption=document.createElement("span"); caption.textContent=labelText; label.appendChild(caption);
+    const control=type==="select"?document.createElement("select"):document.createElement("input");
+    if(control instanceof HTMLInputElement)control.type=type;
+    if(control instanceof HTMLSelectElement)(options??[]).forEach(option=>{const item=document.createElement("option");item.value=option.value;item.textContent=option.label;control.appendChild(item);});
+    control.value=value; control.addEventListener("input",()=>onValue(control.value)); control.addEventListener("change",()=>onValue(control.value));
+    label.appendChild(control); editor.appendChild(label); return control;
+  };
+  const updatePreview=()=>{
+    if(proposal.type!=="create_loan")return;
+    const payload=editablePayload;
+    const borrower=typeof payload.borrowerFullName==="string"?payload.borrowerFullName:state.borrowers.find(item=>item.id===payload.borrowerId)?.full_name??"Nakalista nang borrower";
+    const principal=typeof payload.principalMinor==="number"?(payload.principalMinor/100).toLocaleString("en-PH",{style:"currency",currency:"PHP"}):"—";
+    const cadence:Record<string,string>={one_time:"one-time",daily:"araw-araw",weekly:"lingguhan",monthly:"buwanan",annual:"taunan"};
+    const interestFrequency=String(payload.interestFrequency??payload.interestPeriod??"one_time");
+    const interest=payload.interestType==="none"?"Walang interest":String(payload.interestValue)+(payload.interestType==="percentage"?"%":" pesos")+" · "+(cadence[interestFrequency]??interestFrequency);
+    const repayment:Record<string,string>={one_time:"Isang bayaran",daily:"Araw-araw",weekly:"Lingguhan",biweekly:"Kada dalawang linggo",monthly:"Buwanan"};
+    details.textContent="Hihiraman: "+borrower+(payload.borrowerFullName?" (irehistro kung bago pa)":"")+"\nHalagang ipinahiram: "+principal+"\nInterest: "+interest+(payload.dueDate?"\nTakdang petsa: "+String(payload.dueDate):"")+(payload.repaymentTimingNote?"\nNapag-usapang bayaran: "+String(payload.repaymentTimingNote):"")+(payload.repaymentFrequency?"\nParaan ng bayad: "+(repayment[String(payload.repaymentFrequency)]??String(payload.repaymentFrequency)):"");
+  };
   if (proposal.type === "create_loan") {
-    const payload = proposal.payload as Record<string, unknown>;
-    const borrower = typeof payload.borrowerFullName === "string" ? payload.borrowerFullName :
-      state.borrowers.find(item => item.id === payload.borrowerId)?.full_name ?? "Nakalista nang borrower";
-    const principal = typeof payload.principalMinor === "number" ? (payload.principalMinor / 100).toLocaleString("en-PH", { style: "currency", currency: "PHP" }) : "—";
-    const frequency = String(payload.interestFrequency ?? payload.interestPeriod ?? "one_time");
-    const frequencyLabel: Record<string, string> = { one_time: "one-time", daily: "araw-araw", weekly: "lingguhan", monthly: "buwanan", annual: "taunan" };
-    const interest = payload.interestType === "none" ? "Walang interest" :
-      String(payload.interestValue) + (payload.interestType === "percentage" ? "%" : " pesos") +
-      " · " + (frequencyLabel[frequency] ?? frequency);
-    const repaymentLabel: Record<string, string> = { one_time: "Isang bayaran", daily: "Araw-araw", weekly: "Lingguhan", biweekly: "Kada dalawang linggo", monthly: "Buwanan" };
-    details.textContent = "Hihiraman: " + borrower + (payload.borrowerFullName ? " (irehistro kung bago pa)" : "") +
-      "\nHalagang ipinahiram: " + principal + "\nInterest: " + interest +
-      (payload.dueDate ? "\nTakdang petsa: " + String(payload.dueDate) : "") +
-      (payload.repaymentTimingNote ? "\nNapag-usapang bayaran: " + String(payload.repaymentTimingNote) : "") +
-      (payload.repaymentFrequency ? "\nParaan ng bayad: " + (repaymentLabel[String(payload.repaymentFrequency)] ?? String(payload.repaymentFrequency)) : "") +
-      (payload.installmentCount ? "\nBilang ng hulog: " + String(payload.installmentCount) : "") +
-      (typeof payload.installmentAmountMinor === "number" ? "\nHalaga kada hulog: " + peso(payload.installmentAmountMinor) : "");
+    const payload=editablePayload; updatePreview();
+    const originalName=state.borrowers.find(item=>item.id===proposal.payload.borrowerId)?.full_name??"";
+    addField("Borrower name","text",typeof payload.borrowerFullName==="string"?payload.borrowerFullName:originalName,value=>{
+      if(value.trim()&&(proposal.payload.borrowerId?value.trim()!==originalName:true)){editablePayload.borrowerFullName=value.trim();delete editablePayload.borrowerId;}
+      else if(proposal.payload.borrowerId){editablePayload.borrowerId=proposal.payload.borrowerId;delete editablePayload.borrowerFullName;}
+      updatePreview();
+    });
+    addField("Principal (PHP)","number",String(Number(payload.principalMinor??0)/100),value=>{const amount=Number(value);if(Number.isFinite(amount)&&amount>0)editablePayload.principalMinor=Math.round(amount*100);updatePreview();});
+    addField("Due date","date",String(payload.dueDate??""),value=>{if(value)editablePayload.dueDate=value;else delete editablePayload.dueDate;updatePreview();});
+    addField("Repayment frequency","select",String(payload.repaymentFrequency??"one_time"),value=>{editablePayload.repaymentFrequency=value;updatePreview();},[{value:"one_time",label:"One-time"},{value:"daily",label:"Daily"},{value:"weekly",label:"Weekly"},{value:"biweekly",label:"Every two weeks"},{value:"monthly",label:"Monthly"}]);
+    addField("Interest type","select",String(payload.interestType??"none"),value=>{editablePayload.interestType=value;if(value==="none")editablePayload.interestValue=0;updatePreview();},[{value:"none",label:"No interest"},{value:"fixed",label:"Fixed amount"},{value:"percentage",label:"Percentage"}]);
+    addField("Interest value","number",String(payload.interestValue??0),value=>{const amount=Number(value);if(Number.isFinite(amount)&&amount>=0)editablePayload.interestValue=amount;updatePreview();});
+    addField("Interest frequency","select",String(payload.interestFrequency??"one_time"),value=>{editablePayload.interestFrequency=value;editablePayload.interestPeriod=value==="monthly"?"monthly":"one_time";updatePreview();},[{value:"one_time",label:"One-time"},{value:"daily",label:"Daily"},{value:"weekly",label:"Weekly"},{value:"monthly",label:"Monthly"},{value:"annual",label:"Annual"}]);
+  } else if (proposal.type === "create_borrower" || proposal.type === "update_borrower") {
+    addField("Full name","text",String(editablePayload.fullName??""),value=>{editablePayload.fullName=value.trim();});
+    addField("Phone","tel",String(editablePayload.phone??""),value=>{editablePayload.phone=value.trim();});
+    details.textContent="Review and edit the borrower details below before preparing confirmation.";
   } else {
-    details.textContent = JSON.stringify(proposal.payload, null, 2);
+    const raw=document.createElement("textarea"); raw.className="proposal-json-editor"; raw.value=JSON.stringify(editablePayload,null,2); raw.setAttribute("aria-label","Edit proposed action payload JSON");
+    raw.addEventListener("change",()=>{try{const parsed=JSON.parse(raw.value);if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)){Object.keys(editablePayload).forEach(key=>delete editablePayload[key]);Object.assign(editablePayload,parsed);}raw.setCustomValidity("");}catch{raw.setCustomValidity("Enter valid JSON before preparing.");}});
+    editor.appendChild(raw); details.textContent="Edit the action payload below. The server validates it before preparing confirmation.";
   }
   const prepare = document.createElement("button");
   prepare.className = "proposal-button";
@@ -328,7 +353,7 @@ function renderProposal(proposal: AssistantProposal) {
       const response = await fetch("/api/actions/prepare", {
         method: "POST", headers: { "content-type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ type: proposal.type, payload: proposal.payload })
+        body: JSON.stringify({ type: proposal.type, payload: editablePayload })
       });
       const data = await response.json() as { actionId?: string; error?: string; expiresInMinutes?: number };
       if (!response.ok || !data.actionId) throw new Error(data.error ?? "Could not prepare this action.");
@@ -354,7 +379,7 @@ function renderProposal(proposal: AssistantProposal) {
           await loadData();
           state.pendingReviews = state.pendingReviews.filter(item => item.actionId !== data.actionId);
           addMessage("assistant", resultData.borrowerCreated
-            ? "Nairehistro si " + String((proposal.payload as Record<string, unknown>).borrowerFullName ?? "ang borrower") + " at na-save ang loan. Na-refresh na ang lending records."
+            ? "Nairehistro si " + String(editablePayload.borrowerFullName ?? "ang borrower") + " at na-save ang loan. Na-refresh na ang lending records."
             : "Na-save ang loan. Na-refresh na ang lending records.");
         } catch (error) {
           notice.textContent = error instanceof Error ? error.message : "Save failed. Please check the records.";
@@ -404,6 +429,7 @@ function renderProposal(proposal: AssistantProposal) {
   card.appendChild(heading);
   card.appendChild(summary);
   card.appendChild(details);
+  if(editor.childElementCount)card.appendChild(editor);
   card.appendChild(prepare);
   list.appendChild(card);
   list.scrollTop = list.scrollHeight;
@@ -465,12 +491,14 @@ async function sendMessage(event: SubmitEvent) {
   if (sendButton) { sendButton.disabled = true; sendButton.textContent = "…"; }
   if (assistantStatus) assistantStatus.textContent = "Thinking through your request…";
   if (messageList) messageList.scrollTop = messageList.scrollHeight;
+  let requestId: string | undefined;
   try {
     const response = await fetch("/api/assistant", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages: state.messages.slice(-20) })
     });
-    const data = await response.json() as AssistantReply & { error?: string };
+    const data = await response.json() as AssistantReply & { error?: string; requestId?: string };
+    requestId = data.requestId;
     if (!response.ok) throw new Error(data.error ?? "Assistant request failed.");
     if (data.proposedActions?.length) {
       // The proposal card is the single source of truth for a pending write.
@@ -479,7 +507,8 @@ async function sendMessage(event: SubmitEvent) {
       addMessage("assistant", data.message);
     }
   } catch (error) {
-    addMessage("assistant", error instanceof Error ? error.message : "Hindi muna available ang assistant. Walang na-save na transaction.");
+    const errorText=error instanceof Error?error.message:"Hindi muna available ang assistant. Walang na-save na transaction.";
+    addMessage("assistant",errorText+(requestId?"\nRequest ID: "+requestId+" (ibigay ito kung magre-report ng error).":""));
   } finally {
     thinking.remove();
     if (sendButton) { sendButton.disabled = false; sendButton.textContent = "↑"; }

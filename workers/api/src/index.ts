@@ -800,6 +800,9 @@ export function detectAssistantLanguage(message: string): SupportedLanguage {
 }
 
 async function assistantReply(request: Request, env: Env): Promise<Response> {
+  const requestStartedAt=Date.now();
+  let retryAttempted=false;
+  let modelAttemptCount=0;
   if (!env.AI) return json({ error: "AI service is not configured." }, 503);
   const body = await readJson(request);
   if (!isRecord(body) || !Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 20) {
@@ -877,6 +880,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
 
   const requestId = crypto.randomUUID();
   try {
+    modelAttemptCount+=1;
     const modelResult = await runLendingAssistantModel(env.AI, systemPrompt, messages);
     let parseResult = parseAssistantOutputDetailed(modelResult);
     let parsed = parseResult.response;
@@ -899,10 +903,10 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       });
     }
 
-    let retryAttempted = false;
     let diagnosticOutput = modelResult;
     if (!parsed) {
       retryAttempted = true;
+      modelAttemptCount+=1;
       const retryPrompt = systemPrompt + " IMPORTANT FORMAT RETRY: Your previous response did not match the required schema. Answer the user's original request again. Return exactly one valid JSON object with all four required keys: intent, message, proposedActions, needsClarification. Do not include Markdown, explanations, or text outside JSON. For ordinary conversation use intent answer_question and proposedActions []. For any lending action, include only a fully specified proposal and set requiresConfirmation to true. If details are missing, ask a clarification question and propose no action. Never claim that a record was saved.";
       diagnosticOutput = await runLendingAssistantModel(env.AI, retryPrompt, messages);
       parseResult = parseAssistantOutputDetailed(diagnosticOutput);
@@ -928,6 +932,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
         const resolutionPrompt = systemPrompt +
           "\n\nTRANSACTION RESOLUTION RETRY: Your previous answer asked for clarification, but the conversation already appears to contain all required loan facts. Re-read the entire conversation and return one combined create_loan proposal if the facts below agree with what the owner actually said. A single explicit repayment date such as 'babayaran sa December 30', with no installment language, means one-time repayment for review. Do not ask the owner to choose from a menu. Do not invent or change any value. Return only the required JSON object and keep requiresConfirmation true. Backend preflight reference (not a database write): " +
           JSON.stringify(verifiedLoanProposal);
+        modelAttemptCount+=1;
         const resolutionResult = await runLendingAssistantModel(env.AI, resolutionPrompt, messages);
         const resolution = parseAssistantOutput(resolutionResult);
         const candidate = resolution?.proposedActions.find(action => action.type === "create_loan");
@@ -974,7 +979,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     }
 
     if (validationIssues.length > 0) {
-      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: LENDING_ASSISTANT_MODEL, retryAttempted, validationIssues, ...modelOutputDiagnostics(diagnosticOutput) }));
+      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: LENDING_ASSISTANT_MODEL, retryAttempted, retryCount: Math.max(0,modelAttemptCount-1), latencyMs: Date.now()-requestStartedAt, issueFields: [...new Set(validationIssues.map(issue=>issue.split(":")[0]))], validationIssues, ...modelOutputDiagnostics(diagnosticOutput) }));
     }
     if (!parsed) {
       if (isPotentialWriteRequest(messages)) {
@@ -992,6 +997,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     if (isLendingOverviewRequest(lastUserMessage) && parsed.intent === "answer_question" && parsed.proposedActions.length === 0) {
       parsed.message = removeInterestClarificationFromOverview(parsed.message);
     }
+    console.info("[assistant] assistant_request_completed", JSON.stringify({ requestId, model: LENDING_ASSISTANT_MODEL, latencyMs: Date.now()-requestStartedAt, retryCount: Math.max(0,modelAttemptCount-1), intent: parsed.intent, actionCount: parsed.proposedActions.length }));
     return json(parsed);
   } catch (error) {
     console.error("[assistant] model_request_failed", JSON.stringify(buildAiErrorDiagnostics(error, {
@@ -1001,7 +1007,9 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       enableThinking: LENDING_ASSISTANT_ENABLE_THINKING,
       systemPromptLength: systemPrompt.length,
       messageCount: messages.length,
-      totalMessageCharacters
+      totalMessageCharacters,
+      latencyMs: Date.now()-requestStartedAt,
+      retryCount: Math.max(0,modelAttemptCount-1)
     })));
     return json({ error: "AI assistant is temporarily unavailable. You can still use the regular app controls.", requestId }, 503);
   }

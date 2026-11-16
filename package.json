@@ -8,7 +8,8 @@
     "build": "vite build --config apps/lending-assistant/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check": "npm run typecheck && npm test && npm run build",
+    "assistant:diagnostics": "node scripts/summarize-assistant-logs.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",

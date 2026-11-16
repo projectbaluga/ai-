@@ -205,3 +205,11 @@
 @media(prefers-reduced-motion:reduce){
  .assistant-panel.ai-first .chat-form .send-btn{transition:none}
 }
+
+/* Editable assistant proposal fields */
+.assistant-panel.ai-first .proposal-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 15px}
+.assistant-panel.ai-first .proposal-field{display:flex;flex-direction:column;gap:5px;min-width:0;color:#5b6680;font-size:10px;font-weight:700}
+.assistant-panel.ai-first .proposal-field input,.assistant-panel.ai-first .proposal-field select,.assistant-panel.ai-first .proposal-json-editor{width:100%;min-width:0;border:1px solid #dfe3ed;border-radius:9px;background:#fff;padding:10px;color:#354158;font:12px 'DM Sans',sans-serif}
+.assistant-panel.ai-first .proposal-json-editor{min-height:150px;grid-column:1/-1;resize:vertical}
+.assistant-panel.ai-first .proposal-field input:focus,.assistant-panel.ai-first .proposal-field select:focus,.assistant-panel.ai-first .proposal-json-editor:focus{outline:2px solid #aaa5ed;outline-offset:1px}
+@media(max-width:700px){.assistant-panel.ai-first .proposal-editor{grid-template-columns:1fr}}
