@@ -304,7 +304,7 @@ describe("API worker", () => {
       needsClarification: false
     };
     expect(parseAssistantOutput(base)?.proposedActions[0].payload).toMatchObject({ borrowerFullName: "Allan Lobrigo" });
-    expect(parseAssistantOutput({ ...base, proposedActions: [{ ...base.proposedActions[0], payload: { ...base.proposedActions[0].payload, borrowerFullName: undefined, borrowerId: "PENDING_BORROWER_ID" } }] })).toBeNull();
+    expect(parseAssistantOutput({ ...base, proposedActions: [{ ...base.proposedActions[0], payload: { ...base.proposedActions[0].payload, borrowerFullName: undefined, borrowerId: "PENDING_BORROWER_ID" } }] })).toMatchObject({ intent: "request_clarification", proposedActions: [], needsClarification: true });
   });
   it("accepts expanded interest and repayment terms and rejects impossible due dates", () => {
     const base = {
@@ -338,7 +338,7 @@ describe("API worker", () => {
     });
     const invalid = structuredClone(base);
     invalid.proposedActions[0].payload.dueDate = "2026-02-31";
-    expect(parseAssistantOutput(invalid)).toBeNull();
+    expect(parseAssistantOutput(invalid)).toMatchObject({ intent: "request_clarification", proposedActions: [], needsClarification: true });
   });
 
   beforeEach(() => {
