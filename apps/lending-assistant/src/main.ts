@@ -54,7 +54,7 @@ function shell() {
       <button class="assistant-fab" id="assistant-open" aria-label="Open AI assistant"><span>✦</span><b>Ask AI</b></button>
       <section class="assistant-panel" id="assistant-panel" aria-label="AI Lending Assistant" hidden>
         <header class="assistant-head"><div class="ai-avatar">✦</div><div><strong>AI Lending Assistant</strong><small id="assistant-status" aria-live="polite">Ready to help · English / Tagalog</small></div><button class="icon-btn" id="assistant-close" aria-label="Close assistant">×</button></header>
-        <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"><div class="welcome-message"><span class="welcome-spark">✦</span><h3>Hello! How can I help?</h3><p>Ask about your lending records, borrowers, or payments. I’ll use verified records when the secure connection is ready.</p><div class="prompt-chips"><button data-prompt="Show my lending overview">Lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Summarize recent payments">Recent payments</button></div></div></div>
+        <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"><div class="welcome-message"><span class="welcome-spark">✦</span><h3>Hello! How can I help?</h3><p>Ask about your lending records, borrowers, or payments. I’ll use verified records when the secure connection is ready.</p></div></div>
         <form class="chat-form" id="chat-form"><textarea id="chat-input" rows="1" placeholder="Ask a question or type a message…" aria-label="Message the AI assistant" aria-describedby="chat-hint"></textarea><div class="chat-actions"><button type="button" class="voice-btn" id="voice-btn" aria-label="Speak a message">♩ <span>Voice</span></button><span class="chat-hint" id="chat-hint">Enter to send · Shift+Enter for a new line · Approval required before saving</span><button class="send-btn" type="submit" aria-label="Send message">↑</button></div></form>
       </section>
     </div>`;
@@ -76,7 +76,7 @@ function renderPage() {
   target.classList.toggle("assistant-home", isAssistantHome);
   if (isAssistantHome) {
     document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === state.page));
-    target.innerHTML = `<div class="ai-home-intro"><p class="eyebrow">YOUR AI LENDING WORKSPACE</p><h1>What would you like to do?</h1><p class="muted">Magtanong, maghanap ng records, mag-review ng payments, o maghanda ng transaction. You can speak or type naturally.</p><div class="ai-suggestions"><button data-prompt="Show my lending overview">Show lending overview</button><button data-prompt="Find a borrower">Find a borrower</button><button data-prompt="Show recent payments">Recent payments</button><button data-prompt="Show my active loans">Active loans</button></div></div>`;
+    target.innerHTML = `<div class="ai-home-intro"><p class="eyebrow">YOUR AI LENDING WORKSPACE</p><h1>What would you like to do?</h1><p class="muted">Magtanong, maghanap ng records, mag-review ng payments, o maghanda ng transaction. You can speak or type naturally.</p><div class="ai-suggestions"><button data-prompt="Show my lending overview">Lending overview</button><button data-prompt="Find a borrower">Find a borrower</button></div></div>`;
     target.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach(b => b.addEventListener("click", () => { const input = document.querySelector<HTMLTextAreaElement>("#chat-input"); if (input) { input.value = b.dataset.prompt ?? ""; input.focus(); } }));
     return;
   }
@@ -549,7 +549,7 @@ function renderProposal(proposal: AssistantProposal) {
   heading.textContent = proposal.type === "create_loan" ? "Suriin ang detalye ng utang" : "Suriin ang gagawing pagbabago";
   const summary = document.createElement("p");
   summary.textContent = proposal.type === "create_loan"
-    ? "Pakitingnan kung tama ang mga detalye. Wala pang mase-save hangga't hindi ninyo pinipindot ang save."
+    ? "Suriin ang buod ng napagkasunduang detalye. Walang mase-save hangga't hindi ninyo kinukumpirma."
     : proposal.summary;
   const details = document.createElement("pre");
   if (proposal.type === "create_loan") {
@@ -575,7 +575,7 @@ function renderProposal(proposal: AssistantProposal) {
   }
   const prepare = document.createElement("button");
   prepare.className = "proposal-button";
-  prepare.textContent = proposal.type === "create_loan" ? "Review loan details" : "Review transaction details";
+  prepare.textContent = "Ihanda ang kumpirmasyon";
   prepare.addEventListener("click", async () => {
     if (state.actionBusy || state.busy) return;
     state.actionBusy = true;
