@@ -551,8 +551,8 @@ export function extractExplicitRepaymentFrequency(messages: AssistantMessage[]):
       assistantAskedRepayment && /\b(?:biweekly|every two weeks|kada dalawang linggo)\b/i.test(lastUserTurn) ? "biweekly" :
     /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ||
       assistantAskedRepayment && /\b(?:monthly|buwanan|buwan-buwan|kada buwan)\b/i.test(lastUserTurn) ? "monthly" :
-    assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment)/i.test(lastUserTurn) ? "one_time" :
-    /(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|buo ang bayad|full payment)/i.test(userText) ? "one_time" :
+    assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full)/i.test(lastUserTurn) ? "one_time" :
+    /(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full)/i.test(userText) ? "one_time" :
     null;
 }
 
@@ -584,7 +584,7 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
   const principalMinor = Math.round(principal * 100);
   if (!Number.isFinite(principal) || principal <= 0 || !Number.isSafeInteger(principalMinor)) return null;
 
-  const noInterestMatch = [...userText.matchAll(/\b(?:walang\s+(?:interest|tubo)|interest[- ]?free|no\s+interest)\b/gi)].at(-1);
+  const noInterestMatch = [...userText.matchAll(/\b(?:walang\s+(?:interest|interes|tubo)|wala(?:\s+po)?\s+(?:itong|ito\s+ng|iyan\s+ng|yon\s+ng|siyang)?\s*(?:interest|interes|tubo)|interest[- ]?free|no\s+interest)\b/gi)].at(-1);
   const interestTermText = messages.map((message, index) => ({ message, index }))
     .filter(({ message, index }) => message.role === "user" && (
       /%|interest|tubo/i.test(message.content) ||

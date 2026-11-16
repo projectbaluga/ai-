@@ -198,6 +198,29 @@ describe("API worker", () => {
     ])).toBe("weekly");
   });
 
+  it("prepares Allan Lobrigo's no-interest full-payment loan from a natural Tagalog sentence", () => {
+    const proposal = buildVerifiedLoanProposal([
+      { role: "user", content: "pinautang ko si allan lobrigo nang 1000 pesos at babayaran nya daw po ito next month nang buo at wala po itong interest" }
+    ], { available: true, borrowers: [] });
+    expect(proposal).toMatchObject({
+      intent: "prepare_action",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerFullName: "allan lobrigo",
+          principalMinor: 100000,
+          interestType: "none",
+          interestValue: 0,
+          repaymentFrequency: "one_time",
+          repaymentTimingNote: "next month"
+        },
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    });
+    expect(proposal?.proposedActions[0].payload).not.toHaveProperty("dueDate");
+  });
+
   it("keeps a read-only lending overview from reopening an interest-terms conversation", () => {
     expect(isLendingOverviewRequest("Show my lending overview")).toBe(true);
     expect(isLendingOverviewRequest("How do I calculate interest?")).toBe(false);
