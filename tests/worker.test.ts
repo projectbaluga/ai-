@@ -530,7 +530,7 @@ describe("API worker", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       intent: "answer_question",
-      message: "Kumusta po! Paano kita matutulungan?",
+      message: "Hello! How can I help you?",
       proposedActions: [],
       needsClarification: false
     });
