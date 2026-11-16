@@ -76,8 +76,7 @@ function renderPage() {
   target.classList.toggle("assistant-home", isAssistantHome);
   if (isAssistantHome) {
     document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === state.page));
-    target.innerHTML = `<div class="ai-home-intro"><p class="eyebrow">YOUR AI LENDING WORKSPACE</p><h1>What would you like to do?</h1><p class="muted">Magtanong, maghanap ng records, mag-review ng payments, o maghanda ng transaction. You can speak or type naturally.</p><div class="ai-suggestions"><button data-prompt="Show my lending overview">Lending overview</button><button data-prompt="Find a borrower">Find a borrower</button></div></div>`;
-    target.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach(b => b.addEventListener("click", () => { const input = document.querySelector<HTMLTextAreaElement>("#chat-input"); if (input) { input.value = b.dataset.prompt ?? ""; input.focus(); } }));
+    target.innerHTML = `<div class="ai-home-intro"><h1>How can I help?</h1><p class="muted">I can help with borrowers, loans, and payments. Type one question below.</p></div>`;
     return;
   }
   document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === state.page));
@@ -178,12 +177,10 @@ function addMessage(role: "user" | "assistant", content: string) {
   const list = document.querySelector<HTMLElement>("#chat-messages");
   if (!list) return;
   if (state.messages.length === 1) list.innerHTML = "";
-  if (role === "user") list.querySelectorAll(".quick-replies").forEach(node => node.remove());
   const bubble = document.createElement("div");
   bubble.className = `message-bubble ${role}`;
   bubble.textContent = content;
   list.appendChild(bubble);
-  if (role === "assistant") renderQuickReplies(content, list);
   if (role === "assistant" && state.voiceMode && "speechSynthesis" in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(content);
@@ -194,261 +191,7 @@ function addMessage(role: "user" | "assistant", content: string) {
 }
 
 
-function renderQuickReplies(message: string, list: HTMLElement) {
-  const text = message.toLocaleLowerCase();
-  const recentUserMessages = state.messages.slice(-10).filter(item => item.role === "user");
-  const recentLoan = recentUserMessages.some(item =>
-    /\b(borrowed|loaned|lent|nagpautang|pinahiram|nangutang|umutang|pinautang)\b/i.test(item.content));
-  const recentNoInterest = recentUserMessages.some(item =>
-    /\b(walang\s+(?:interest|interes|tubo)|no\s+interest|interest[- ]?free)\b/i.test(item.content));
-  const asksRepaymentSchedule = /\b(repayment schedule|payment schedule|schedule ng bayad|paraan ng bayad|paano.*bayaran|how.*repay|how.*pay back|hulog)\b/i.test(text);
-  const asksInterestType = /\b(one[- ]?time|monthly|monthly interest|one-time interest|paminsan|buwanan)\b/i.test(text) &&
-    /\b(interest|interes|tubo|rate|porsyento)\b/i.test(text);
-  const asksInterestExistence = /\b(interest[- ]?free|interest|interes|tubo)\b/i.test(text) &&
-    /\b(agreed|napagkasunduan|may|wala|none|free|ba po|ba\??)\b/i.test(text);
-  const asksConfirmation = /\b(should i|would you like|do you want|shall i|gusto (niyo|mo)|nais (niyo|mo)|proceed|continue|save (the )?(note|changes|update)|update the note|register|record the loan|magpatuloy|ituloy|i-save|isave|kumpirmahin|confirm)\b/i.test(text) &&
-    /\?|please confirm|approval required|pakireview|review.*before/i.test(text);
-  const asksCorrection = /\b(correct|change|revise|edit|baguhin|palitan|itama)\b/i.test(text) &&
-    /\b(detail|information|terms|amount|rate|pangalan|detalye)\b/i.test(text);
-  let choices: string[] = [];
-  let question = "";
 
-  if (asksRepaymentSchedule) {
-    question = "Piliin ang napagkasunduang paraan ng bayad:";
-    choices = ["Isang bayaran (one-time)", "Araw-araw", "Lingguhan", "Kada dalawang linggo", "Buwanan"];
-  } else if (asksInterestType && /\bone[- ]?time.{0,45}(or|\/|versus|vs\.?).{0,45}monthly|monthly.{0,45}(or|\/|versus|vs\.?).{0,45}one[- ]?time|one[- ]?time.*monthly|monthly.*one[- ]?time|paminsan.*buwanan|buwanan.*paminsan/i.test(text)) {
-    question = "Piliin ang napagkasunduang interest:";
-    choices = ["One-time interest", "Monthly interest"];
-  } else if (asksInterestExistence && !/\b(one[- ]?time|monthly)\b/i.test(text)) {
-    question = "Ano ang napagkasunduan ninyo sa interest?";
-    choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
-  } else if (asksConfirmation) {
-    question = "Piliin ang gusto ninyong gawin:";
-    choices = ["Oo, magpatuloy", "Hindi muna", "Baguhin ang detalye"];
-  } else if (asksCorrection) {
-    question = "Ano ang gusto ninyong gawin?";
-    choices = ["Panatilihin ang detalye", "Baguhin ang detalye", "Kanselahin muna"];
-  } else if (recentLoan && !recentNoInterest && /\b(pakiulit|repeat|could not|couldn't|hindi.*maihanda|action.*maayos|try again|please provide.*details)\b/i.test(text)) {
-    question = "Para maipagpatuloy ang loan, ano ang napagkasunduan sa interest?";
-    choices = ["Walang interest", "May interest", "Hindi pa napagkasunduan"];
-  }
-
-  if (!choices.length) return;
-  const wrap = document.createElement("div");
-  wrap.className = "quick-replies";
-  wrap.setAttribute("role", "group");
-  wrap.setAttribute("aria-label", question || "Suggested answers");
-  if (question) {
-    const prompt = document.createElement("p");
-    prompt.className = "quick-replies-prompt";
-    prompt.textContent = question;
-    wrap.appendChild(prompt);
-  }
-  for (const choice of choices) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "quick-reply";
-    button.textContent = choice;
-    button.addEventListener("click", () => {
-      const input = document.querySelector<HTMLTextAreaElement>("#chat-input");
-      const form = document.querySelector<HTMLFormElement>("#chat-form");
-      if (!input || !form || state.busy || state.actionBusy) return;
-      wrap.querySelectorAll<HTMLButtonElement>("button").forEach(item => { item.disabled = true; });
-      input.value = choice;
-      form.requestSubmit();
-    });
-    wrap.appendChild(button);
-  }
-  list.appendChild(wrap);
-}
-function renderContextPanel(query: string) {
-  const list = document.querySelector<HTMLElement>("#chat-messages");
-  if (!list || !state.connected) return;
-  const normalize = (value: string) => value.toLocaleLowerCase().normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]+/g, " ").trim();
-  const q = normalize(query);
-  const ignored = new Set(["show", "find", "list", "open", "view", "search", "all", "my", "me", "please", "po", "ang", "mga", "ng", "sa", "si", "kay", "for", "the", "a", "an", "with", "about", "record", "records"]);
-  const tokens = q.split(/\s+/).filter(word => word.length > 1 && !ignored.has(word));
-  const has = (...terms: string[]) => terms.some(term => q.includes(normalize(term)));
-  const borrowerCandidates = state.borrowers.map(b => {
-    const nameTokens = normalize(b.full_name).split(/\s+/).filter(Boolean);
-    const matched = nameTokens.filter(word => tokens.includes(word));
-    return { borrower: b, matched: matched.length, complete: nameTokens.length > 0 && nameTokens.every(word => tokens.includes(word)) };
-  }).filter(item => item.matched > 0)
-    .sort((a, b) => Number(b.complete) - Number(a.complete) || b.matched - a.matched);
-  const exactBorrowers = borrowerCandidates.filter(item => item.complete).map(item => item.borrower);
-  const singleNameCandidates = tokens.length === 1 ? borrowerCandidates.map(item => item.borrower) : [];
-  const namedBorrowers = exactBorrowers.length ? exactBorrowers :
-    singleNameCandidates.length === 1 ? singleNameCandidates : [];
-  const ambiguousBorrowers = !exactBorrowers.length && singleNameCandidates.length > 1 ? singleNameCandidates : [];
-  const loanIdMatches = state.loans.filter(loan => q.includes(normalize(loan.id)));
-  const paymentIdMatches = state.payments.filter(payment => q.includes(normalize(payment.id)));
-  const card = document.createElement("section");
-  card.className = "context-panel";
-  const heading = document.createElement("h4");
-  const rows = document.createElement("div");
-  rows.className = "context-panel-list";
-  let count = 0;
-  const addRow = (title: string, detail: string, page: string, id: string, tag: string) => {
-    const item = document.createElement("article");
-    item.className = "context-row";
-    const copy = document.createElement("div");
-    copy.className = "context-row-copy";
-    const strong = document.createElement("strong");
-    strong.textContent = title;
-    const small = document.createElement("small");
-    small.textContent = detail;
-    copy.appendChild(strong);
-    copy.appendChild(small);
-    const action = document.createElement("button");
-    action.type = "button";
-    action.className = "context-open";
-    action.textContent = "Open";
-    action.addEventListener("click", () => {
-      state.page = page;
-      renderPage();
-      const target = Array.from(document.querySelectorAll<HTMLElement>("[data-record-id]")).find(el => el.dataset.recordId === id);
-      if (target instanceof HTMLDetailsElement) target.open = true;
-      target?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-    item.appendChild(copy);
-    item.appendChild(action);
-    item.dataset.kind = tag;
-    rows.appendChild(item);
-    count++;
-  };
-  let kind = "";
-  if (has("report", "reports", "ulat", "statement", "collection summary")) kind = "reports";
-  else if (paymentIdMatches.length || has("payment", "bayad", "hulog", "nabayad", "payments")) kind = "payments";
-  else if (loanIdMatches.length || has("loan", "loans", "pautang", "utang record", "active loan") ||
-    (namedBorrowers.length > 0 && /\b(?:magkano|bayarin|balance|outstanding|total\s+due|amount\s+due|how\s+much|payoff)\b/i.test(query))) kind = "loans";
-  else if (has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") || namedBorrowers.length || ambiguousBorrowers.length) kind = "borrowers";
-  else if (has("activity", "history", "kasaysayan", "recent activity")) kind = "activity";
-  else if (has("overview", "dashboard", "summary", "kabuuan", "workspace")) kind = "overview";
-  if (kind === "borrowers") {
-    heading.textContent = ambiguousBorrowers.length ? "Possible borrower matches" : "Borrower records";
-    const generic = has("lahat", "all", "list", "show", "find") && !namedBorrowers.length && !ambiguousBorrowers.length;
-    const matches = namedBorrowers.length ? namedBorrowers :
-      ambiguousBorrowers.length ? ambiguousBorrowers :
-      generic || has("borrower", "borrowers", "customer", "kliyente", "tao", "sino") ? state.borrowers : [];
-    matches.slice(0, 12).forEach(b => {
-      const related = state.loans.filter(l => l.borrower_id === b.id);
-      addRow(b.full_name, (b.phone || "No phone recorded") + " · " + related.length + " linked loan(s)", "borrowers", b.id, "borrower");
-    });
-    if (ambiguousBorrowers.length) {
-      const hint = document.createElement("p");
-      hint.className = "context-note";
-      hint.textContent = "More than one borrower matches that name. Please specify the full name before preparing a change.";
-      card.appendChild(hint);
-    }
-  } else if (kind === "loans") {
-    heading.textContent = "Loan records";
-    const generic = !namedBorrowers.length && !loanIdMatches.length &&
-      (has("lahat", "all", "list", "show", "active") || has("loan", "loans", "pautang", "utang record"));
-    const matches = loanIdMatches.length ? loanIdMatches : state.loans.filter(l =>
-      (generic || namedBorrowers.some(b => b.id === l.borrower_id)) &&
-      (!has("active", "aktibo") || l.status === "active"));
-    matches.slice(0, 12).forEach(l => {
-      const borrower = state.borrowers.find(b => b.id === l.borrower_id);
-      const cadence = l.interest_frequency ?? l.interest_period;
-      const interest = l.interest_type === "none" ? "No interest" :
-        l.interest_type === "percentage" ? String(l.interest_value) + "% · " + cadence : "Fixed interest · " + String(l.interest_value);
-      const schedule = l.repayment_frequency ? " · Repayment: " + l.repayment_frequency : "";
-      const timing = l.due_date ? " · Due " + l.due_date : l.repayment_timing_note ? " · " + l.repayment_timing_note : "";
-      const paymentRows = state.payments.filter(p => p.loan_id === l.id);
-      const recorded = paymentRows.reduce((sum, p) => sum + p.amount_minor, 0);
-      const paymentDetail = paymentRows.length ? " · " + paymentRows.length + " payment(s) recorded (" + peso(recorded) + ")" : " · No payment entry found";
-      addRow(peso(l.principal_minor) + " · " + l.status, (borrower?.full_name ?? "Borrower unavailable") + " · " + interest + schedule + timing + paymentDetail, "loans", l.id, "loan");
-    });
-  } else if (kind === "payments") {
-    heading.textContent = "Recorded payment entries";
-    const matches = paymentIdMatches.length ? paymentIdMatches : state.payments.filter(p => {
-      const loan = state.loans.find(l => l.id === p.loan_id);
-      return !namedBorrowers.length || !!loan && namedBorrowers.some(b => b.id === loan.borrower_id);
-    });
-    matches.slice(0, 12).forEach(p => {
-      const loan = state.loans.find(l => l.id === p.loan_id);
-      const borrower = loan && state.borrowers.find(b => b.id === loan.borrower_id);
-      addRow(peso(p.amount_minor), (borrower?.full_name ?? "Borrower unavailable") + " · " + new Date(p.paid_at).toLocaleString("en-PH"), "loans", p.loan_id, "payment");
-    });
-  } else if (kind === "reports") {
-    heading.textContent = "On-demand reports";
-    const description = document.createElement("p");
-    description.className = "context-note";
-    description.textContent = "You can generate a payment report for a date range you choose. It totals recorded payments only; it does not estimate balances, interest, or payoff amounts.";
-    rows.appendChild(description);
-    const openReport = document.createElement("button");
-    openReport.type = "button";
-    openReport.className = "context-open";
-    openReport.textContent = "Open payment reports";
-    openReport.addEventListener("click", () => {
-      state.page = "reports";
-      renderPage();
-      document.querySelector("#payment-report-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-    rows.appendChild(openReport);
-    count++;
-  } else if (kind === "activity") {
-    heading.textContent = "Confirmed activity";
-    state.activity.slice(0, 12).forEach(a => {
-      const payment = a.entity_type === "payment" ? state.payments.find(item => item.id === a.entity_id) : undefined;
-      const targetPage = a.entity_type === "borrower" ? "borrowers" : "loans";
-      const targetId = payment ? payment.loan_id : a.entity_id;
-      const targetExists = a.entity_type === "borrower"
-        ? state.borrowers.some(item => item.id === targetId)
-        : state.loans.some(item => item.id === targetId);
-      if (targetExists) {
-        addRow(a.action.replaceAll("_", " "), a.entity_type + " · " + new Date(a.created_at).toLocaleString("en-PH"), targetPage, targetId, "activity");
-      } else {
-        const item = document.createElement("article");
-        item.className = "context-row";
-        const copy = document.createElement("div");
-        copy.className = "context-row-copy";
-        const strong = document.createElement("strong");
-        strong.textContent = a.action.replaceAll("_", " ");
-        const small = document.createElement("small");
-        small.textContent = a.entity_type + " · " + new Date(a.created_at).toLocaleString("en-PH") + " · Record unavailable";
-        copy.appendChild(strong);
-        copy.appendChild(small);
-        item.appendChild(copy);
-        rows.appendChild(item);
-        count++;
-      }
-    });
-  } else if (kind === "overview") {
-    heading.textContent = "Verified workspace snapshot";
-    [
-      [state.borrowers.length + " borrower record(s)", "Stored borrower records"],
-      [state.loans.length + " loan record(s)", "Stored loan records · no balance inferred"],
-      [state.payments.length + " payment record(s)", "Recorded payment entries"],
-      [state.activity.length + " activity record(s)", "Confirmed audit entries"]
-    ].forEach(([title, detail]) => {
-      const item = document.createElement("article");
-      item.className = "context-row context-stat";
-      const strong = document.createElement("strong");
-      strong.textContent = title;
-      const small = document.createElement("small");
-      small.textContent = detail;
-      item.appendChild(strong);
-      item.appendChild(small);
-      rows.appendChild(item);
-      count++;
-    });
-  } else return;
-  card.appendChild(heading);
-  if (!count) {
-    const empty = document.createElement("p");
-    empty.className = "context-empty";
-    empty.textContent = "No matching stored records were found.";
-    card.appendChild(empty);
-  } else card.appendChild(rows);
-  const note = document.createElement("p");
-  note.className = "context-note";
-  note.textContent = "Verified stored records only. Outstanding balances, accrued interest, and payment allocation are not calculated.";
-  card.appendChild(note);
-  list.appendChild(card);
-  list.scrollTop = list.scrollHeight;
-}
 function showDeleteAllPasswordModal(notice: HTMLElement) {
   const existing = document.querySelector("#delete-all-modal");
   existing?.remove();
@@ -735,7 +478,6 @@ async function sendMessage(event: SubmitEvent) {
     } else {
       addMessage("assistant", data.message);
     }
-    renderContextPanel(content);
   } catch (error) {
     addMessage("assistant", error instanceof Error ? error.message : "Hindi muna available ang assistant. Walang na-save na transaction.");
   } finally {
