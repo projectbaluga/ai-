@@ -710,23 +710,30 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
   const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|after\s+(?:a|one)\s+(?:month|week)|in\s+(?:a|one)\s+(?:month|week)|bukas|tomorrow)/i);
   const dueDate = extractExplicitDueDate(userText) ?? undefined;
   const repaymentFrequency = extractExplicitRepaymentFrequency(messages);
+  const english = /\b(?:i lent|i loaned|i borrowed|my friend|no interest|will pay|pay full|after (?:a|one) (?:month|week)|next month|next week)\b/i.test(userText);
   // Interest cadence and repayment cadence are separate. Never reuse a bare
   // "one-time" interest answer as a repayment schedule.
   if (!repaymentFrequency) {
     return {
       intent: "request_clarification",
-      message: "Ano po ang napagkasunduang paraan ng bayad: isang bayaran, araw-araw, lingguhan, kada dalawang linggo, o buwan-buwan? Iba po ito sa dalas ng pag-charge ng interest.",
+      message: english
+        ? "What repayment schedule did you agree on: one payment or installments? This is separate from the interest terms."
+        : "Ano po ang napagkasunduang paraan ng bayad: isang bayaran, araw-araw, lingguhan, kada dalawang linggo, o buwan-buwan? Iba po ito sa dalas ng pag-charge ng interest.",
       proposedActions: [],
       needsClarification: true
     };
   }
   const borrower = matches[0] ?? null;
-  const interestDescription = interestType === "none" ? "walang interest" : interestValue + "% " + interestFrequency + " interest";
-  const message = "Nakuha ko po. Ihahanda ko ang loan para kay " + borrowerName +
-    ": ₱" + principal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
-    " principal at " + interestDescription +
-    (dueDate ? ", due date " + dueDate : repaymentTimingMatch ? ", napag-usapang bayaran: " + repaymentTimingMatch[0] : "") +
-    ". Pakireview ang detalye bago i-save.";
+  const interestDescription = interestType === "none" ? (english ? "no interest" : "walang interest") : interestValue + "% " + interestFrequency + " interest";
+  const message = english
+    ? "I understood that you lent ₱" + principal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " to " + borrowerName + ", with " + interestDescription +
+      (dueDate ? ", due " + dueDate : repaymentTimingMatch ? ", to be repaid " + repaymentTimingMatch[0] : "") +
+      ". I’ll prepare the loan for your review before anything is saved."
+    : "Nakuha ko po. Ihahanda ko ang loan para kay " + borrowerName +
+      ": ₱" + principal.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+      " principal at " + interestDescription +
+      (dueDate ? ", due date " + dueDate : repaymentTimingMatch ? ", napag-usapang bayaran: " + repaymentTimingMatch[0] : "") +
+      ". Pakireview ang detalye bago i-save.";
   return {
     intent: "prepare_action",
     message,
