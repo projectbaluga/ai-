@@ -6,7 +6,7 @@ import type {
 } from "../../../packages/ai-core/src/contracts";
 import { buildLendingAssistantSystemPrompt } from "./lending-assistant-prompt";
 import { buildTransactionConversationState } from "./transaction-conversation-state";
-import { LENDING_ASSISTANT_ENABLE_THINKING, runLendingAssistantModel, type WorkersAiBinding } from "./workers-ai-provider";
+import { LENDING_ASSISTANT_ENABLE_THINKING, LENDING_ASSISTANT_MODEL, runLendingAssistantModel, type WorkersAiBinding } from "./workers-ai-provider";
 import { buildAiErrorDiagnostics } from "./ai-diagnostics";
 
 export interface Env {
@@ -147,6 +147,15 @@ function validateActionDetailed(type: unknown, input: unknown): ActionValidation
     normalizeEnumField(payload, "interestPeriod", ["one_time", "monthly"]);
     normalizeEnumField(payload, "interestFrequency", ["one_time", "daily", "weekly", "monthly", "annual"]);
     normalizeEnumField(payload, "repaymentFrequency", ["one_time", "daily", "weekly", "biweekly", "monthly"]);
+    if (payload.interestType === "none") {
+      if (payload.interestValue === undefined || payload.interestValue === null) payload.interestValue = 0;
+      if (payload.interestPeriod === undefined || payload.interestPeriod === null) payload.interestPeriod = "one_time";
+      if (payload.interestFrequency === undefined || payload.interestFrequency === null) payload.interestFrequency = "one_time";
+    } else if ((payload.interestValue === 0 || payload.interestValue === "0") && payload.interestType === undefined) {
+      payload.interestType = "none";
+      if (payload.interestPeriod === undefined) payload.interestPeriod = "one_time";
+      if (payload.interestFrequency === undefined) payload.interestFrequency = "one_time";
+    }
     if (!Number.isSafeInteger(payload.principalMinor) || (payload.principalMinor as number) <= 0) issues.push("payload.principalMinor: expected a positive safe integer in minor currency units");
     if (payload.currency !== undefined && payload.currency !== "PHP") issues.push("payload.currency: only PHP is supported");
     requireEnum("interestType", ["none", "fixed", "percentage"]); requireNonNegativeNumber("interestValue");
@@ -385,11 +394,11 @@ export function parseAssistantOutputDetailed(raw: unknown): AssistantParseResult
     if (!isRecord(item)) { issues.push(prefix + ": expected an action object"); continue; }
     if (!text(item.type, 80)) { issues.push(prefix + ".type: expected a supported action name"); continue; }
     if (!isRecord(item.payload)) { issues.push(prefix + ".payload: expected an object"); continue; }
-    if (!text(item.summary, 1000)) { issues.push(prefix + ".summary: expected non-empty text (max 1000)"); continue; }
+    const summary = text(item.summary, 1000) ? item.summary : (candidate.message as string);
     if (item.requiresConfirmation !== undefined && item.requiresConfirmation !== true) { issues.push(prefix + ".requiresConfirmation: must be true for every proposed action"); continue; }
     const validated = validateActionDetailed(item.type, item.payload);
     if (!validated.action) { issues.push(...validated.issues.map(issue => prefix + "." + issue)); continue; }
-    proposedActions.push({ type: validated.action.type, payload: validated.action.payload, summary: item.summary, requiresConfirmation: true as const });
+    proposedActions.push({ type: validated.action.type, payload: validated.action.payload, summary, requiresConfirmation: true as const });
   }
   if (rawActions.length > 3) issues.push("proposedActions: maximum of 3 actions is allowed");
   if (issues.length) return {
@@ -425,7 +434,8 @@ function modelOutputDiagnostics(raw: unknown): JsonObject {
     messageContentType: messageContent === null ? "null" : Array.isArray(messageContent) ? "array" : typeof messageContent,
     messageContentLength: typeof messageContent === "string" ? messageContent.length : null,
     candidateType: content !== null ? "string" : Array.isArray(candidate) ? "array" : typeof candidate,
-    candidateLength: content !== null ? content.length : null
+    candidateLength: content !== null ? content.length : null,
+    rawCandidatePreview: content !== null ? content.slice(0, 1200) : null
   };
 }
 
@@ -618,7 +628,7 @@ export function extractExplicitRepaymentFrequency(messages: AssistantMessage[]):
       assistantAskedRepayment && /\b(?:biweekly|every two weeks|kada dalawang linggo)\b/i.test(lastUserTurn)) return "biweekly";
   if (/(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ||
       assistantAskedRepayment && /\b(?:monthly|buwanan|buwan-buwan|kada buwan)\b/i.test(lastUserTurn)) return "monthly";
-  if (/(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full)/i.test(userText)) return "one_time";
+  if (/(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full|(?:will\s+)?pay(?:\s+it)?\s+(?:the\s+)?full(?:\s+amount)?|(?:will\s+)?pay[\s\S]{0,45}after\s+(?:a|one)\s+(?:month|week)|after\s+(?:a|one)\s+(?:month|week))/i.test(userText)) return "one_time";
   if (assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment)/i.test(lastUserTurn)) return "one_time";
 
   // A single stated calendar due date, with no installment cadence, is treated
@@ -646,7 +656,7 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
     return name.length > 0 && (" " + normalizedText + " ").includes(" " + name + " ");
   });
   if (matches.length > 1) return null;
-  const nameMatch = userText.match(/\b(?:kay|si|ni)[ \t]+([\p{L}][\p{L}'’-]*(?:[ \t]+(?!ng\b|nang\b|na\b|ngayon\b|today\b|kahapon\b|yesterday\b|bukas\b|tomorrow\b|at\b|and\b|pero\b|tapos\b|babayaran\b|bayaran\b|next\b|wala\b)[\p{L}][\p{L}'’-]*){0,2})/iu);
+  const nameMatch = userText.match(/\b(?:kay|si|ni)[ \t]+([\p{L}][\p{L}'’-]*(?:[ \t]+(?!ng\b|nang\b|na\b|ngayon\b|today\b|kahapon\b|yesterday\b|bukas\b|tomorrow\b|at\b|and\b|pero\b|tapos\b|babayaran\b|bayaran\b|next\b|wala\b)[\p{L}][\p{L}'’-]*){0,2})/iu) ?? userText.match(/\bto\s+(?:(?:my|a|the)\s+)?(?:(?:friend|buddy|colleague|neighbor|neighbour)\s+)?([\p{L}][\p{L}'’-]*(?:[ \t]+(?!no\b|interest\b|he\b|she\b|they\b|will\b|would\b|pay\b|full\b|after\b|in\b|next\b|today\b|tomorrow\b|and\b|but\b|for\b|with\b)[\p{L}][\p{L}'’-]*){0,2})/iu);
   const borrowerName = matches.length === 1 ? matches[0].full_name : nameMatch?.[1]
     ?.replace(/\s+(?:ngayon|today|kahapon|yesterday|bukas|tomorrow)$/i, "").trim();
   if (!borrowerName) return null;
@@ -689,7 +699,7 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
     if (!found.length) return null;
     interestFrequency = found[0].value;
   }
-  const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|bukas|tomorrow)/i);
+  const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|after\s+(?:a|one)\s+(?:month|week)|in\s+(?:a|one)\s+(?:month|week)|bukas|tomorrow)/i);
   const dueDate = extractExplicitDueDate(userText) ?? undefined;
   const repaymentFrequency = extractExplicitRepaymentFrequency(messages);
   // Interest cadence and repayment cadence are separate. Never reuse a bare
@@ -949,7 +959,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     }
 
     if (validationIssues.length > 0) {
-      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, validationIssues, ...modelOutputDiagnostics(diagnosticOutput) }));
+      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: LENDING_ASSISTANT_MODEL, retryAttempted, validationIssues, ...modelOutputDiagnostics(diagnosticOutput) }));
     }
     if (!parsed) {
       if (isPotentialWriteRequest(messages)) {
@@ -969,7 +979,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   } catch (error) {
     console.error("[assistant] model_request_failed", JSON.stringify(buildAiErrorDiagnostics(error, {
       requestId,
-      model: "@cf/google/gemma-4-26b-a4b-it",
+      model: LENDING_ASSISTANT_MODEL,
       maxTokens: 2400,
       enableThinking: LENDING_ASSISTANT_ENABLE_THINKING,
       systemPromptLength: systemPrompt.length,
