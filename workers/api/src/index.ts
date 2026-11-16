@@ -40,6 +40,12 @@ const isIsoDate = (value: unknown): value is string => {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 };
 
+export function getManilaCurrentDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const part = (type: string) => parts.find(item => item.type === type)?.value ?? "";
+  return part("year") + "-" + part("month") + "-" + part("day");
+}
+
 export function extractExplicitDueDate(value: string, now = new Date()): string | null {
   const iso = value.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   if (iso && isIsoDate(iso[1])) return iso[1];
@@ -799,6 +805,31 @@ export function detectAssistantLanguage(message: string): SupportedLanguage {
   return "en";
 }
 
+function assistantMessageLanguageMismatch(message: string, language: SupportedLanguage): boolean {
+  if (language === "tl-en") return false;
+  const detected = detectAssistantLanguage(message);
+  return language === "en" ? detected === "tl" : detected === "en";
+}
+
+function explicitDateFromUserMessages(messages: AssistantMessage[], now = new Date()): string | null {
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const date = extractExplicitDueDate(message.content, now);
+    if (date) return date;
+  }
+  return null;
+}
+
+function relativeRepaymentTimingFromUserMessages(messages: AssistantMessage[]): string | null {
+  const pattern = /\b(?:bukas|tomorrow|next\s+(?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|sa\s+susunod\s+na\s+(?:linggo|buwan)|after\s+(?:a|one|\d+)\s+(?:day|week|month|year)s?|in\s+(?:a|one|\d+)\s+(?:day|week|month|year)s?|within\s+(?:a|one|\d+)\s+(?:day|week|month|year)s?|after\s+\d+\s+days?|end\s+of\s+(?:the\s+)?month|katapusan\s+ng\s+buwan)\b/i;
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    const match = message.content.match(pattern);
+    if (match) return match[0];
+  }
+  return null;
+}
+
 async function assistantReply(request: Request, env: Env): Promise<Response> {
   const requestStartedAt=Date.now();
   let retryAttempted=false;
@@ -871,7 +902,12 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   }
   const financialLookupReply = buildFinancialLookupReply(lastUserMessage, language, targetedMatches);
   if (financialLookupReply) return json(financialLookupReply);
-  const systemPrompt = buildLendingAssistantSystemPrompt({ language, recordContext, targetedMatches }) +
+  const systemPrompt = buildLendingAssistantSystemPrompt({
+    language,
+    recordContext,
+    targetedMatches,
+    currentManilaDate: getManilaCurrentDate()
+  }) +
     "\n\nTRANSACTION CONVERSATION STATE: " + JSON.stringify({
       status: transactionState.status,
       carriesTransactionContext: transactionState.carriesTransactionContext,
@@ -895,9 +931,22 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     // structured schema and continue through backend validation/confirmation.
     const firstPlainText = modelTextOutput(modelResult);
     if (!parsed && firstPlainText && !looksLikeStructuredModelOutput(firstPlainText) && !isPotentialWriteRequest(messages) && !verifiedLoanProposal) {
+      let plainReply = firstPlainText;
+      if (assistantMessageLanguageMismatch(plainReply, language)) {
+        retryAttempted = true;
+        modelAttemptCount += 1;
+        const languageRetry = await runLendingAssistantModel(env.AI,
+          systemPrompt + "\\n\\nLANGUAGE RETRY: Your previous reply used the wrong language. The user's latest message is in " + language + ". Rewrite the answer entirely in " + (language === "en" ? "English" : "Filipino/Tagalog") + ". Preserve factual meaning, add no facts, and return plain text only.",
+          messages);
+        const retriedText = modelTextOutput(languageRetry);
+        if (retriedText && !assistantMessageLanguageMismatch(retriedText, language)) plainReply = retriedText;
+        else plainReply = language === "en"
+          ? "I’m sorry, I couldn’t provide a reliable answer in English just now. Please try again."
+          : "Pasensya na po, hindi ako nakapagbigay ng maaasahang sagot sa Tagalog ngayon. Pakisubukan muli.";
+      }
       return json({
         intent: "answer_question",
-        message: isLendingOverviewRequest(lastUserMessage) ? removeInterestClarificationFromOverview(firstPlainText) : firstPlainText,
+        message: isLendingOverviewRequest(lastUserMessage) ? removeInterestClarificationFromOverview(plainReply) : plainReply,
         proposedActions: [],
         needsClarification: false
       });
@@ -951,6 +1000,35 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
         }
       } catch {
         // Keep the verified, confirmation-gated fallback available if the retry fails.
+      }
+    }
+
+    if (parsed && assistantMessageLanguageMismatch(parsed.message, language)) {
+      retryAttempted = true;
+      modelAttemptCount += 1;
+      const languageRetry = await runLendingAssistantModel(env.AI,
+        systemPrompt + "\\n\\nLANGUAGE RETRY: Your previous reply used the wrong language. The user's latest message is in " + language + ". Rewrite the response entirely in " + (language === "en" ? "English" : "Filipino/Tagalog") + ". Keep the same intent, action types and payload values; do not alter financial facts. Return exactly one valid JSON object using the required schema.",
+        messages);
+      const retryParsed = parseAssistantOutput(languageRetry);
+      if (retryParsed && !assistantMessageLanguageMismatch(retryParsed.message, language)) parsed = retryParsed;
+      else parsed.message = language === "en"
+        ? "I prepared the requested response, but could not phrase it reliably in English. Please retry before proceeding."
+        : "Na ihanda ko ang tugon, pero hindi ko ito maipahayag nang maaasahan sa Tagalog. Pakisubukan muli bago magpatuloy.";
+    }
+
+    const userExplicitDate = explicitDateFromUserMessages(messages);
+    const relativeTiming = relativeRepaymentTimingFromUserMessages(messages);
+    if (parsed) {
+      for (const action of parsed.proposedActions) {
+        if (action.type === "create_loan" && text(action.payload.dueDate, 10) &&
+            (!userExplicitDate || action.payload.dueDate !== userExplicitDate)) {
+          delete action.payload.dueDate;
+          if (relativeTiming) action.payload.repaymentTimingNote = relativeTiming;
+        }
+        if (action.type === "record_payment" && text(action.payload.paidAt, 10) &&
+            (!userExplicitDate || action.payload.paidAt !== userExplicitDate)) {
+          delete action.payload.paidAt;
+        }
       }
     }
 

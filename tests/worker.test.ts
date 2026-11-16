@@ -1249,3 +1249,25 @@ describe("assistant golden endpoint regressions", () => {
     } finally { invalidLog.mockRestore(); env.DB=originalDb; }
   });
 });
+
+
+describe("Manila date anchor and date provenance", () => {
+  it("uses the Asia/Manila calendar date for the prompt anchor", async () => {
+    const { getManilaCurrentDate } = await import("../workers/api/src/index");
+    expect(getManilaCurrentDate(new Date("2026-12-15T16:30:00.000Z"))).toBe("2026-12-16");
+  });
+  it("does not treat relative wording as an explicit calendar date", () => {
+    const now = new Date("2026-11-16T04:00:00.000Z");
+    expect(extractExplicitDueDate("bukas niya babayaran", now)).toBeNull();
+    expect(extractExplicitDueDate("after a month", now)).toBeNull();
+    expect(extractExplicitDueDate("next week", now)).toBeNull();
+    expect(extractExplicitDueDate("December 16", now)).toBe("2026-12-16");
+  });
+  it("places mandatory language and Manila date directives before the knowledge base", async () => {
+    const { buildLendingAssistantSystemPrompt } = await import("../workers/api/src/lending-assistant-prompt");
+    const value = buildLendingAssistantSystemPrompt({language:"en",currentManilaDate:"2026-12-16",recordContext:{},targetedMatches:{}});
+    expect(value.indexOf("RESPONSE LANGUAGE (MANDATORY)")).toBeLessThan(value.indexOf("PHILIPPINE LENDING KNOWLEDGE"));
+    expect(value).toContain("CURRENT DATE: Today is 2026-12-16 (Asia/Manila)");
+    expect(value).toContain("Reply entirely in that language");
+  });
+});
