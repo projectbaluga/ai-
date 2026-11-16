@@ -520,7 +520,9 @@ describe("API worker", () => {
   });
 
   it("accepts plain text for ordinary non-transactional conversation", async () => {
-    env.AI.run.mockImplementationOnce(async () => ({ response: "Kumusta po! Paano kita matutulungan?" }));
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: "Kumusta po! Paano kita matutulungan?" }))
+      .mockImplementationOnce(async () => ({ response: "Hello! How can I help you?" }));
     const response = await worker.fetch(new Request("https://example.test/api/assistant", {
       method: "POST", headers: { ...authorized, "content-type": "application/json" },
       body: JSON.stringify({ messages: [{ role: "user", content: "Hello!" }] })
@@ -532,7 +534,7 @@ describe("API worker", () => {
       proposedActions: [],
       needsClarification: false
     });
-    expect(env.AI.run).toHaveBeenCalledOnce();
+    expect(env.AI.run).toHaveBeenCalledTimes(2);
   });
 
   it("accepts conversational prose even when it contains braces or JSON-like examples", async () => {
@@ -619,7 +621,8 @@ describe("API worker", () => {
     };
     env.AI.run
       .mockImplementationOnce(async () => ({ response: "I can prepare that loan now." }))
-      .mockImplementationOnce(async () => ({ response: JSON.stringify(clarification) }));
+      .mockImplementationOnce(async () => ({ response: JSON.stringify(clarification) }))
+      .mockImplementationOnce(async () => ({ response: JSON.stringify({ ...clarification, message: "What interest terms did you agree on?" }) }));
     const response = await worker.fetch(new Request("https://example.test/api/assistant", {
       method: "POST", headers: { ...authorized, "content-type": "application/json" },
       body: JSON.stringify({ messages: [
@@ -634,7 +637,7 @@ describe("API worker", () => {
       proposedActions: [],
       needsClarification: true
     });
-    expect(env.AI.run).toHaveBeenCalledTimes(2);
+    expect(env.AI.run).toHaveBeenCalledTimes(3);
   });
 
   it("answers loan-process how-to questions naturally without treating them as write requests", async () => {
