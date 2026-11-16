@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import worker, { buildFinancialLookupReply, buildVerifiedLoanProposal, extractExplicitRepaymentFrequency, isLendingOverviewRequest, isRecordLookupRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
+import worker, { buildFinancialLookupReply, buildVerifiedLoanProposal, extractExplicitDueDate, extractExplicitRepaymentFrequency, isLendingOverviewRequest, isRecordLookupRequest, parseAssistantOutput, removeInterestClarificationFromOverview } from "../workers/api/src/index";
 import { buildLendingAssistantSystemPrompt } from "../workers/api/src/lending-assistant-prompt";
 
 let loginAttempts = 0;
@@ -949,4 +949,109 @@ describe("API worker", () => {
     });
     expect(env.AI.run).toHaveBeenCalledTimes(2);
   });
+  it("resolves month-name due dates and treats a single dated repayment as one-time", () => {
+    const now = new Date("2026-11-16T08:00:00.000Z");
+    expect(extractExplicitDueDate("babayaran sa December 30", now)).toBe("2026-12-30");
+    expect(extractExplicitDueDate("due on 30 Dec", now)).toBe("2026-12-30");
+    expect(extractExplicitDueDate("babayaran sa March 2", now)).toBe("2027-03-02");
+    expect(extractExplicitDueDate("babayaran sa February 30", now)).toBeNull();
+    expect(extractExplicitRepaymentFrequency([
+      { role: "user", content: "Pinautang ko si Juan Dela Cruz ng ₱1,000, walang interest, babayaran sa December 30." }
+    ])).toBe("one_time");
+    expect(extractExplicitRepaymentFrequency([
+      { role: "user", content: "Pinautang ko si Juan ng ₱1,000, walang interest, babayaran sa December 30 nang hulugan weekly." }
+    ])).toBe("weekly");
+  });
+
+  it("prepares a single-payment loan proposal for a natural Tagalog calendar-date request", () => {
+    const proposal = buildVerifiedLoanProposal([
+      { role: "user", content: "Pinautang ko si Juan Dela Cruz ng ₱1,000, walang interest, babayaran sa December 30, 2026." }
+    ], { available: true, borrowers: [] });
+    expect(proposal).toMatchObject({
+      intent: "prepare_action",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerFullName: "Juan Dela Cruz",
+          principalMinor: 100000,
+          interestType: "none",
+          interestValue: 0,
+          dueDate: "2026-12-30",
+          repaymentFrequency: "one_time"
+        },
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    });
+  });
+
+  it("asks the AI to resolve a false loan clarification before using the verified fallback", async () => {
+    const originalDb = env.DB;
+    env.DB = {
+      prepare: (_sql: string) => ({
+        bind: (..._values: unknown[]) => ({
+          all: async () => ({ results: [] }),
+          first: async () => null,
+          run: async () => ({ success: true })
+        }),
+        all: async () => ({ results: [] }),
+        first: async () => null,
+        run: async () => ({ success: true })
+      })
+    } as unknown as D1Database;
+    const clarification = {
+      intent: "request_clarification",
+      message: "Ano po ang paraan ng bayad?",
+      proposedActions: [],
+      needsClarification: true
+    };
+    const proposal = {
+      intent: "prepare_action",
+      message: "Nakuha ko po. Ihahanda ko ang loan para kay Juan Dela Cruz: ₱1,000, walang interest, due December 30, 2026, isang bayaran. Pakireview bago i-save.",
+      proposedActions: [{
+        type: "create_loan",
+        payload: {
+          borrowerFullName: "Juan Dela Cruz",
+          principalMinor: 100000,
+          currency: "PHP",
+          interestType: "none",
+          interestValue: 0,
+          interestPeriod: "one_time",
+          interestFrequency: "one_time",
+          dueDate: "2026-12-30",
+          repaymentFrequency: "one_time"
+        },
+        summary: "Gumawa ng loan record para kay Juan Dela Cruz na ₱1,000 at walang interest",
+        requiresConfirmation: true
+      }],
+      needsClarification: false
+    };
+    env.AI.run.mockClear();
+    env.AI.run
+      .mockImplementationOnce(async () => ({ response: JSON.stringify(clarification) }))
+      .mockImplementationOnce(async () => ({ response: JSON.stringify(proposal) }));
+    try {
+      const response = await worker.fetch(new Request("https://example.test/api/assistant", {
+        method: "POST",
+        headers: { ...authorized, "content-type": "application/json" },
+        body: JSON.stringify({ messages: [{
+          role: "user",
+          content: "Pinautang ko si Juan Dela Cruz ng ₱1,000, walang interest, babayaran sa December 30, 2026."
+        }] })
+      }), env);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        intent: "prepare_action",
+        proposedActions: [{
+          type: "create_loan",
+          payload: { borrowerFullName: "Juan Dela Cruz", principalMinor: 100000, dueDate: "2026-12-30", repaymentFrequency: "one_time" },
+          requiresConfirmation: true
+        }]
+      });
+      expect(env.AI.run).toHaveBeenCalledTimes(2);
+    } finally {
+      env.DB = originalDb;
+    }
+  });
+
 });

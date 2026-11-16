@@ -40,6 +40,39 @@ const isIsoDate = (value: unknown): value is string => {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 };
 
+export function extractExplicitDueDate(value: string, now = new Date()): string | null {
+  const iso = value.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  if (iso && isIsoDate(iso[1])) return iso[1];
+  const months: Record<string, number> = {
+    jan: 1, january: 1, enero: 1, feb: 2, february: 2, febrero: 2,
+    mar: 3, march: 3, marzo: 3, apr: 4, april: 4, abril: 4,
+    may: 5, mayo: 5, jun: 6, june: 6, junio: 6, jul: 7, july: 7, julio: 7,
+    aug: 8, august: 8, agosto: 8, sep: 9, sept: 9, september: 9, septiembre: 9,
+    oct: 10, october: 10, octubre: 10, nov: 11, november: 11, noviembre: 11,
+    dec: 12, december: 12, diciembre: 12
+  };
+  const monthPattern = Object.keys(months).join("|");
+  const monthFirst = value.match(new RegExp("\\b(" + monthPattern + ")\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(20\\d{2}))?\\b", "i"));
+  const monthLast = value.match(new RegExp("\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(" + monthPattern + ")\\.?(?:,?\\s+(20\\d{2}))?\\b", "i"));
+  const match = monthFirst ?? monthLast;
+  if (!match) return null;
+  const month = months[(monthFirst ? match[1] : match[2]).toLowerCase()];
+  const day = Number(monthFirst ? match[2] : match[1]);
+  const explicitYear = match[3];
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(now);
+  const part = (type: string) => Number(parts.find(item => item.type === type)?.value);
+  const todayYear = part("year");
+  const todayMonth = part("month");
+  const todayDay = part("day");
+  let year = explicitYear ? Number(explicitYear) : todayYear;
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  if (candidate.getUTCFullYear() !== year || candidate.getUTCMonth() !== month - 1 || candidate.getUTCDate() !== day) return null;
+  if (!explicitYear && (month < todayMonth || month === todayMonth && day < todayDay)) year += 1;
+  return year + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+}
+
 function normalizeActionPayload(type: unknown, input: unknown): { type: ActionType; payload: JsonObject } | null {
   if (!isRecord(input)) return null;
   const aliases: Record<string, ActionType> = {
@@ -543,17 +576,22 @@ export function extractExplicitRepaymentFrequency(messages: AssistantMessage[]):
   const lastUserTurn = [...messages].reverse().find(message => message.role === "user")?.content ?? "";
   const lastAssistantTurn = [...messages].reverse().find(message => message.role === "assistant")?.content ?? "";
   const assistantAskedRepayment = /repayment|payment schedule|paraan ng bayad|schedule ng bayad|hulog|bayaran/i.test(lastAssistantTurn);
-  return /(?:weekly payments|weekly hulog|kada linggo ang hulog|lingguhan ang bayad)/i.test(userText) ||
-      assistantAskedRepayment && /\b(?:weekly|lingguhan|kada linggo)\b/i.test(lastUserTurn) ? "weekly" :
-    /(?:daily payments|daily hulog|araw-araw ang hulog|kada araw ang bayad)/i.test(userText) ||
-      assistantAskedRepayment && /\b(?:daily|araw-araw|kada araw)\b/i.test(lastUserTurn) ? "daily" :
-    /(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ||
-      assistantAskedRepayment && /\b(?:biweekly|every two weeks|kada dalawang linggo)\b/i.test(lastUserTurn) ? "biweekly" :
-    /(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ||
-      assistantAskedRepayment && /\b(?:monthly|buwanan|buwan-buwan|kada buwan)\b/i.test(lastUserTurn) ? "monthly" :
-    assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full)/i.test(lastUserTurn) ? "one_time" :
-    /(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full)/i.test(userText) ? "one_time" :
-    null;
+  if (/(?:weekly payments|weekly hulog|kada linggo ang hulog|lingguhan ang bayad)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:weekly|lingguhan|kada linggo)\b/i.test(lastUserTurn)) return "weekly";
+  if (/(?:daily payments|daily hulog|araw-araw ang hulog|kada araw ang bayad)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:daily|araw-araw|kada araw)\b/i.test(lastUserTurn)) return "daily";
+  if (/(?:biweekly payments|biweekly hulog|kada dalawang linggo ang hulog)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:biweekly|every two weeks|kada dalawang linggo)\b/i.test(lastUserTurn)) return "biweekly";
+  if (/(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ||
+      assistantAskedRepayment && /\b(?:monthly|buwanan|buwan-buwan|kada buwan)\b/i.test(lastUserTurn)) return "monthly";
+  if (/(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full)/i.test(userText)) return "one_time";
+
+  // A single stated calendar due date, with no installment cadence, is treated
+  // as one lump-sum repayment for review. The owner still confirms the proposal.
+  const hasInstallmentCadence = /\b(?:installments?|hulog-hulog|daily|araw-araw|kada araw|weekly|lingguhan|kada linggo|biweekly|kada dalawang linggo|monthly|buwanan|buwan-buwan|kada buwan)\b/i.test(userText);
+  const hasRepaymentDateStatement = /\b(?:babayaran|bayaran|mababayaran|due|repay|pay back|pay it|settle)\b/i.test(userText);
+  if (!hasInstallmentCadence && hasRepaymentDateStatement && extractExplicitDueDate(userText)) return "one_time";
+  return null;
 }
 
 export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordContext: JsonObject): AssistantResponse | null {
@@ -617,8 +655,7 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
     interestFrequency = found[0].value;
   }
   const repaymentTimingMatch = userText.match(/(?:sa susunod na linggo|next week|sa susunod na buwan|next month|bukas|tomorrow)/i);
-  const explicitDateMatch = userText.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-  const dueDate = explicitDateMatch && isIsoDate(explicitDateMatch[1]) ? explicitDateMatch[1] : undefined;
+  const dueDate = extractExplicitDueDate(userText) ?? undefined;
   const repaymentFrequency = extractExplicitRepaymentFrequency(messages);
   // Interest cadence and repayment cadence are separate. Never reuse a bare
   // "one-time" interest answer as a repayment schedule.
@@ -815,6 +852,35 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
           proposedActions: [],
           needsClarification: false
         });
+      }
+    }
+
+    if (parsed?.intent === "request_clarification" && parsed.proposedActions.length === 0 &&
+        verifiedLoanProposal?.intent === "prepare_action" && verifiedLoanProposal.proposedActions.length === 1) {
+      // Give the model a focused opportunity to resolve a false clarification.
+      // The backend preflight is reference data only; owner confirmation remains mandatory.
+      try {
+        const resolutionPrompt = systemPrompt +
+          "\n\nTRANSACTION RESOLUTION RETRY: Your previous answer asked for clarification, but the conversation already appears to contain all required loan facts. Re-read the entire conversation and return one combined create_loan proposal if the facts below agree with what the owner actually said. A single explicit repayment date such as 'babayaran sa December 30', with no installment language, means one-time repayment for review. Do not ask the owner to choose from a menu. Do not invent or change any value. Return only the required JSON object and keep requiresConfirmation true. Backend preflight reference (not a database write): " +
+          JSON.stringify(verifiedLoanProposal);
+        const resolutionResult = await runLendingAssistantModel(env.AI, resolutionPrompt, messages);
+        const resolution = parseAssistantOutput(resolutionResult);
+        const candidate = resolution?.proposedActions.find(action => action.type === "create_loan");
+        const expected = verifiedLoanProposal.proposedActions[0];
+        if (resolution && candidate &&
+            candidate.payload.principalMinor === expected.payload.principalMinor &&
+            candidate.payload.interestType === expected.payload.interestType &&
+            candidate.payload.interestValue === expected.payload.interestValue &&
+            candidate.payload.interestFrequency === expected.payload.interestFrequency &&
+            candidate.payload.dueDate === expected.payload.dueDate &&
+            candidate.payload.repaymentFrequency === expected.payload.repaymentFrequency &&
+            (expected.payload.borrowerId
+              ? candidate.payload.borrowerId === expected.payload.borrowerId
+              : String(candidate.payload.borrowerFullName ?? "").toLocaleLowerCase() === String(expected.payload.borrowerFullName ?? "").toLocaleLowerCase())) {
+          parsed = resolution;
+        }
+      } catch {
+        // Keep the verified, confirmation-gated fallback available if the retry fails.
       }
     }
 
