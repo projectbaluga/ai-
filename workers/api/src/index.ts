@@ -396,7 +396,15 @@ export function parseAssistantOutputDetailed(raw: unknown): AssistantParseResult
     if (!isRecord(item.payload)) { issues.push(prefix + ".payload: expected an object"); continue; }
     const summary = text(item.summary, 1000) ? item.summary : (candidate.message as string);
     if (item.requiresConfirmation !== undefined && item.requiresConfirmation !== true) { issues.push(prefix + ".requiresConfirmation: must be true for every proposed action"); continue; }
-    const validated = validateActionDetailed(item.type, item.payload);
+    const actionPayload: JsonObject = { ...item.payload };
+    if (["create_loan", "createLoan"].includes(String(item.type)) &&
+        /\b(?:no interest|interest[- ]free|without interest|walang interest|walang tubo)\b/i.test(candidate.message as string)) {
+      if (actionPayload.interestType === undefined) actionPayload.interestType = "none";
+      if (actionPayload.interestValue === undefined) actionPayload.interestValue = 0;
+      if (actionPayload.interestPeriod === undefined) actionPayload.interestPeriod = "one_time";
+      if (actionPayload.interestFrequency === undefined) actionPayload.interestFrequency = "one_time";
+    }
+    const validated = validateActionDetailed(item.type, actionPayload);
     if (!validated.action) { issues.push(...validated.issues.map(issue => prefix + "." + issue)); continue; }
     proposedActions.push({ type: validated.action.type, payload: validated.action.payload, summary, requiresConfirmation: true as const });
   }
