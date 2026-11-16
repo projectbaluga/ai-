@@ -959,7 +959,7 @@ describe("API worker", () => {
       { role: "user", content: "Pinautang ko si Juan Dela Cruz ng ₱1,000, walang interest, babayaran sa December 30." }
     ])).toBe("one_time");
     expect(extractExplicitRepaymentFrequency([
-      { role: "user", content: "Pinautang ko si Juan ng ₱1,000, walang interest, babayaran sa December 30 nang hulugan weekly." }
+      { role: "user", content: "Pinautang ko si Juan ng ₱1,000, walang interest, babayaran sa December 30 na may weekly hulog." }
     ])).toBe("weekly");
   });
 

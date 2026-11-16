@@ -585,6 +585,7 @@ export function extractExplicitRepaymentFrequency(messages: AssistantMessage[]):
   if (/(?:monthly payments|monthly hulog|buwan-buwan ang hulog|kada buwan ang bayad)/i.test(userText) ||
       assistantAskedRepayment && /\b(?:monthly|buwanan|buwan-buwan|kada buwan)\b/i.test(lastUserTurn)) return "monthly";
   if (/(?:one[- ]?time payment|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment|babayaran[\s\S]{0,70}nang\s+buo|bayaran[\s\S]{0,70}nang\s+buo|pay[\s\S]{0,70}in full|repay[\s\S]{0,70}in full)/i.test(userText)) return "one_time";
+  if (assistantAskedRepayment && /(?:one[- ]?time|single payment|lump[- ]?sum|isang bayaran|isang hulog|isang beses|buo ang bayad|full payment)/i.test(lastUserTurn)) return "one_time";
 
   // A single stated calendar due date, with no installment cadence, is treated
   // as one lump-sum repayment for review. The owner still confirms the proposal.
