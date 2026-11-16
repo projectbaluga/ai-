@@ -914,7 +914,7 @@ describe("API worker", () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
         intent: "request_clarification",
-        message: expect.stringContaining("two borrower reference"),
+        message: expect.stringContaining("dalawang borrower reference"),
         proposedActions: [],
         needsClarification: true
       });
