@@ -867,6 +867,7 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
     }
 
     if (parsed?.intent === "request_clarification" && parsed.proposedActions.length === 0 &&
+        !validationIssues.some(issue => issue.startsWith("proposedActions")) &&
         verifiedLoanProposal?.intent === "prepare_action" && verifiedLoanProposal.proposedActions.length === 1) {
       // Give the model a focused opportunity to resolve a false clarification.
       // The backend preflight is reference data only; owner confirmation remains mandatory.
