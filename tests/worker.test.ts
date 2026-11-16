@@ -243,6 +243,26 @@ describe("API worker", () => {
     expect(parseAssistantOutput({ message: { reasoning: "Private reasoning", content: "```json\n" + JSON.stringify(response) + "\n```" } })).toEqual(response);
   });
 
+  it("handles a Tagalog loan and a follow-up question through the assistant endpoint without invalid-output logs", async () => {
+    const originalDb = env.DB;
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    env.DB = { prepare: (_sql: string) => ({ bind: (..._values: unknown[]) => ({ all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true }) }), all: async () => ({ results: [] }), first: async () => null, run: async () => ({ success: true }) }) } as unknown as D1Database;
+    const loanProposal = { intent: "prepare_action", message: "Ihahanda ko ang loan ni Mica para ma-review mo.", proposedActions: [{ type: "create_loan", payload: { borrowerFullName: "Mica", principalMinor: 150000, currency: "PHP", interestType: "none", interestValue: 0, interestPeriod: "one_time", interestFrequency: "one_time", repaymentFrequency: "one_time" }, summary: "Ihanda ang loan ni Mica na ₱1,500", requiresConfirmation: true }], needsClarification: false };
+    const answer = { intent: "answer_question", message: "Ang walang interest ay nangangahulugang principal lang ang babayaran, walang dagdag na interest.", proposedActions: [], needsClarification: false };
+    env.AI.run.mockImplementationOnce(async () => ({ choices: [{ message: { reasoning: "Private reasoning", content: "<think>Reviewing the loan facts.</think>\\n" + JSON.stringify(loanProposal) } }] })).mockImplementationOnce(async () => ({ message: { reasoning: "Private reasoning", content: "```json\\n" + JSON.stringify(answer) + "\\n```" } }));
+    try {
+      const first = await worker.fetch(new Request("https://example.test/api/assistant", { method: "POST", headers: { ...authorized, "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "Pinautang ko si Mica ng 1,500 pesos, walang interest, isang bayaran." }] }) }), env);
+      expect(first.status).toBe(200);
+      const firstBody = await first.json();
+      expect(firstBody).toMatchObject({ intent: "prepare_action", proposedActions: [{ type: "create_loan", payload: { borrowerFullName: "Mica", principalMinor: 150000, interestType: "none" }, requiresConfirmation: true }], needsClarification: false });
+      const second = await worker.fetch(new Request("https://example.test/api/assistant", { method: "POST", headers: { ...authorized, "content-type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "Pinautang ko si Mica ng 1,500 pesos, walang interest, isang bayaran." }, { role: "assistant", content: firstBody.message }, { role: "user", content: "Ano ang ibig sabihin ng walang interest?" }] }) }), env);
+      expect(second.status).toBe(200);
+      expect(await second.json()).toEqual(answer);
+      expect(env.AI.run).toHaveBeenCalledTimes(2);
+      expect(errorSpy.mock.calls.some(call => String(call[0]).includes("[assistant] invalid_model_response"))).toBe(false);
+    } finally { env.DB = originalDb; errorSpy.mockRestore(); }
+  });
+
   it("combines a new borrower registration and loan into one validated approval", () => {
     const parsed = parseAssistantOutput({
       intent: "prepare_action",
