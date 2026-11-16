@@ -825,7 +825,9 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
   const requestId = crypto.randomUUID();
   try {
     const modelResult = await runLendingAssistantModel(env.AI, systemPrompt, messages);
-    let parsed = parseAssistantOutput(modelResult);
+    let parseResult = parseAssistantOutputDetailed(modelResult);
+    let parsed = parseResult.response;
+    let validationIssues = parseResult.issues;
     // Prefer a backend-verified loan proposal for an explicit loan event. This
     // keeps a plain-text or malformed model reply from discarding clear facts
     // already present in the conversation; the proposal still requires owner approval.
@@ -850,7 +852,9 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
       retryAttempted = true;
       const retryPrompt = systemPrompt + " IMPORTANT FORMAT RETRY: Your previous response did not match the required schema. Answer the user's original request again. Return exactly one valid JSON object with all four required keys: intent, message, proposedActions, needsClarification. Do not include Markdown, explanations, or text outside JSON. For ordinary conversation use intent answer_question and proposedActions []. For any lending action, include only a fully specified proposal and set requiresConfirmation to true. If details are missing, ask a clarification question and propose no action. Never claim that a record was saved.";
       diagnosticOutput = await runLendingAssistantModel(env.AI, retryPrompt, messages);
-      parsed = parseAssistantOutput(diagnosticOutput);
+      parseResult = parseAssistantOutputDetailed(diagnosticOutput);
+      parsed = parseResult.response;
+      validationIssues = parseResult.issues;
       const retryPlainText = modelTextOutput(diagnosticOutput);
       if (!parsed && retryPlainText && !looksLikeStructuredModelOutput(retryPlainText) && !isPotentialWriteRequest(messages) && !verifiedLoanProposal) {
         return json({
@@ -908,13 +912,16 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
         needsClarification: true
       });
     }
-    if (verifiedLoanProposal && (!parsed || parsed.proposedActions.length === 0 ||
+    const modelActionValidationFailed = validationIssues.some(issue => issue.startsWith("proposedActions"));
+    if (verifiedLoanProposal && !modelActionValidationFailed && (!parsed || parsed.proposedActions.length === 0 ||
       parsed.proposedActions.length > 0 && parsed.proposedActions.every(action => action.type === "create_borrower"))) {
       return json(verifiedLoanProposal);
     }
 
+    if (validationIssues.length > 0) {
+      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, validationIssues, ...modelOutputDiagnostics(diagnosticOutput) }));
+    }
     if (!parsed) {
-      console.error("[assistant] invalid_model_response", JSON.stringify({ requestId, model: "@cf/google/gemma-4-26b-a4b-it", retryAttempted, ...modelOutputDiagnostics(diagnosticOutput) }));
       if (isPotentialWriteRequest(messages)) {
         return json({
           intent: "request_clarification",
