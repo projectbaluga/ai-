@@ -664,8 +664,8 @@ export function buildVerifiedLoanProposal(messages: AssistantMessage[], recordCo
 
 export function detectAssistantLanguage(message: string): SupportedLanguage {
   const normalized = message.toLocaleLowerCase().normalize("NFD")
-    .replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9' -]+/g, " ")
-    .replace(/\\s+/g, " ").trim();
+    .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9' -]+/g, " ")
+    .replace(/\s+/g, " ").trim();
   const words = normalized.split(" ").filter(Boolean);
   const filipinoMarkers = new Set([
     "ako", "ikaw", "siya", "kami", "tayo", "kayo", "sila", "ko", "mo", "namin", "natin",

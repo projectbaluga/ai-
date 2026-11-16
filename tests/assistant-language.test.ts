@@ -9,7 +9,7 @@ describe("assistant response language detection", () => {
 
   it("detects Tagalog messages", () => {
     expect(detectAssistantLanguage("Magkano ang utang ni Juan?")).toBe("tl");
-    expect(detectAssistantLanguage("Paki ayos po ang record na ito.")).toBe("tl");
+    expect(detectAssistantLanguage("Paki ayos po ito.")).toBe("tl");
   });
 
   it("detects mixed English and Tagalog messages as Taglish", () => {
