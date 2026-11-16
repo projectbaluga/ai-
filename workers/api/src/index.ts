@@ -450,6 +450,40 @@ async function findTargetedRecords(db: D1Database, messages: AssistantMessage[])
   };
 }
 
+function formatMinorAmount(value: unknown): string | null {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) return null;
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency", currency: "PHP", minimumFractionDigits: 2, maximumFractionDigits: 2
+  }).format((value as number) / 100);
+}
+
+/** Adds unambiguous peso display strings while preserving integer-centavo fields for backend logic. */
+export function addFinancialDisplayAmounts<T extends Record<string, unknown>>(context: T): T {
+  const withDisplay = (rows: unknown, fields: Array<[string, string]>) =>
+    Array.isArray(rows) ? rows.map(row => {
+      if (!isRecord(row)) return row;
+      const result: JsonObject = { ...row };
+      for (const [source, display] of fields) {
+        const formatted = formatMinorAmount(row[source]);
+        if (formatted !== null) result[display] = formatted;
+      }
+      return result;
+    }) : rows;
+  return {
+    ...context,
+    ...(Array.isArray(context.loans) ? { loans: withDisplay(context.loans, [
+      ["principal_minor", "principal_display"],
+      ["installment_amount_minor", "installment_amount_display"]
+    ]) } : {}),
+    ...(Array.isArray(context.recentPayments) ? { recentPayments: withDisplay(context.recentPayments, [
+      ["amount_minor", "amount_display"]
+    ]) } : {}),
+    ...(Array.isArray(context.payments) ? { payments: withDisplay(context.payments, [
+      ["amount_minor", "amount_display"]
+    ]) } : {})
+  };
+}
+
 export function buildFinancialLookupReply(message: string, language: SupportedLanguage, targetedMatches: JsonObject): AssistantResponse | null {
   if (!/\b(?:magkano|bayarin|balance|outstanding|total\s+due|amount\s+due|how\s+much|payoff)\b/i.test(message)) return null;
   if (targetedMatches.searched !== true || !Array.isArray(targetedMatches.loans)) return null;
@@ -680,12 +714,12 @@ async function assistantReply(request: Request, env: Env): Promise<Response> {
         env.DB.prepare("SELECT l.id, l.borrower_id, b.full_name AS borrower_name, l.principal_minor, l.currency, l.interest_type, l.interest_value, l.interest_period, l.interest_frequency, l.due_date, l.repayment_timing_note, l.repayment_frequency, l.installment_count, l.installment_amount_minor, l.status FROM loans l JOIN borrowers b ON b.id = l.borrower_id ORDER BY l.created_at DESC LIMIT 30").all<Record<string, unknown>>(),
         env.DB.prepare("SELECT p.id, p.loan_id, b.full_name AS borrower_name, p.amount_minor, p.paid_at FROM payments p JOIN loans l ON l.id = p.loan_id JOIN borrowers b ON b.id = l.borrower_id ORDER BY p.paid_at DESC LIMIT 30").all<Record<string, unknown>>()
       ]);
-      recordContext = { available: true, borrowers: borrowerRows.results ?? [], loans: loanRows.results ?? [], recentPayments: paymentRows.results ?? [] };
+      recordContext = addFinancialDisplayAmounts({ available: true, borrowers: borrowerRows.results ?? [], loans: loanRows.results ?? [], recentPayments: paymentRows.results ?? [] });
     } catch {
       recordContext = { available: false, note: "Verified records are temporarily unavailable. Do not guess or claim to have searched them." };
     }
     try {
-      targetedMatches = await findTargetedRecords(env.DB, messages);
+      targetedMatches = addFinancialDisplayAmounts(await findTargetedRecords(env.DB, messages));
     } catch {
       targetedMatches = { searched: false, reason: "Targeted record search is temporarily unavailable." };
     }
