@@ -589,7 +589,8 @@ describe("API worker", () => {
     const systemPrompt = buildLendingAssistantSystemPrompt({
       language: "tl-en",
       recordContext: { available: false },
-      targetedMatches: { searched: false }
+      targetedMatches: { searched: false },
+      currentManilaDate: "2026-11-16"
     });
     expect(systemPrompt).toContain("NATURAL HUMAN CONVERSATION");
     expect(systemPrompt).toContain("LANGUAGE ADAPTATION");
