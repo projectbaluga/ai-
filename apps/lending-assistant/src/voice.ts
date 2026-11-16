@@ -81,7 +81,7 @@ export function startVoiceListening() {
   const state = deps.getState();
   const Speech = getSpeechRecognitionCtor();
   if (!Speech) {
-    deps.addMessage("assistant", "Hindi supported ng browser na ito ang voice input. Maaari pa rin kayong mag-type ng message.");
+    deps.addMessage("assistant", "Voice input is not supported in this browser. You can still type a message.");
     deps.setVoiceMode(false);
     updateVoiceUi();
     return;
@@ -96,7 +96,8 @@ export function startVoiceListening() {
   }
 
   recognition = new Speech();
-  recognition.lang = "fil-PH";
+  // Default to English; Tagalog speech is still accepted by most engines.
+  recognition.lang = "en-PH";
   recognition.continuous = false;
   recognition.interimResults = false;
 
@@ -145,7 +146,7 @@ export function startVoiceListening() {
 export function toggleVoice() {
   if (!deps) return;
   if (!getSpeechRecognitionCtor()) {
-    deps.addMessage("assistant", "Hindi supported ng browser na ito ang voice input. Maaari pa rin kayong mag-type ng message.");
+    deps.addMessage("assistant", "Voice input is not supported in this browser. You can still type a message.");
     return;
   }
   if (deps.getState().voiceMode) {
@@ -162,7 +163,8 @@ export function speakAssistantReply(content: string) {
   if (!deps.getState().voiceMode || !("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(content);
-  const looksFilipino = /\b(po|opo|sige|salamat|utang|bayad|borrower|loan|interest|walang|magkano|ano|paano)\b/i.test(content)
+  // Default English; switch to Filipino only when the reply is clearly Tagalog-heavy.
+  const looksFilipino = /\b(po|opo|sige|salamat|utang|bayad|walang|magkano|ano|paano|ninyo|natin|ko|mo)\b/i.test(content)
     || /[\u00F1\u00D1]/.test(content);
   utterance.lang = looksFilipino ? "fil-PH" : "en-PH";
   utterance.rate = 1.02;
