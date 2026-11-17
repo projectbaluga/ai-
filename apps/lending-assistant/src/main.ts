@@ -308,7 +308,7 @@ function renderProposal(proposal: AssistantProposal) {
     if(control instanceof HTMLSelectElement)(options??[]).forEach(option=>{const item=document.createElement("option");item.value=option.value;item.textContent=option.label;control.appendChild(item);});
     control.value=value;
     if (["Borrower name","Full name","Principal (PHP)"].includes(labelText)) control.required=true;
-    if (control instanceof HTMLInputElement && type==="number") control.min=labelText==="Principal (PHP)"?"0.01":"0";
+    if (control instanceof HTMLInputElement && type==="number") { control.min=labelText==="Principal (PHP)"?"0.01":"0"; control.step="0.01"; }
     editorControls.push(control);
     control.addEventListener("input",()=>onValue(control.value)); control.addEventListener("change",()=>onValue(control.value));
     label.appendChild(control); editor.appendChild(label); return control;
